@@ -112,7 +112,7 @@
        live GET /public/stats call, real numbers only (no fabricated
        social proof) -- do not hand-edit the numbers, re-run the script. -->
   <section class="stats-strip wrap reveal">
-    <div class="stat-item"><span class="stat-num">42</span><span class="stat-label">already on RealGram</span></div>
+    <div class="stat-item"><span class="stat-num">44</span><span class="stat-label">already on RealGram</span></div>
     <div class="stat-item"><span class="stat-num">14</span><span class="stat-label">exploring Shahnameh</span></div>
   </section>
   <!-- STATS_END -->
@@ -162,15 +162,95 @@
     </ol>
   </section>
 
+  <section id="freedom" class="spotlight wrap">
+    <div class="spotlight-copy reveal reveal-left" style="--accent:var(--cyan)">
+      <p class="eyebrow">Freedom · always-on connect</p>
+      <h2>The connection that doesn't wait for permission.</h2>
+      <p class="lead">VLESS + Reality and WireGuard tunnels carry every
+        session by default, with AI-assisted routing that keeps adapting
+        mid-session instead of just at connect. Where the ground network is
+        cut off completely, Freedom can fall back to satellite-backed
+        access — the same Starlink-class link the app's own connect screen
+        promises, not a separate product bolted on.</p>
+      <ul class="spotlight-points">
+        <li>No separate VPN app to install or trust</li>
+        <li>Routing that keeps adapting while you're already connected</li>
+        <li>Satellite-backed fallback for when towers and fiber both fail</li>
+      </ul>
+    </div>
+    <div class="spotlight-visual reveal reveal-right orbit-banner" style="--accent:var(--cyan)" aria-hidden="true">
+      <div class="orbit-stars" id="freedomStars"></div>
+      <div class="orbit-ring-wrap">
+        <div class="orbit-ring"></div>
+        <div class="orbit-sat">🛰️<span class="orbit-beam"></span></div>
+      </div>
+      <div class="orbit-planet"></div>
+      <span class="spotlight-badge"><span class="spotlight-beat"></span> Freedom · Live</span>
+    </div>
+  </section>
+
+  <section id="shahnameh" class="spotlight wrap">
+    <div class="spotlight-copy reveal reveal-right" style="--accent:var(--gold)">
+      <p class="eyebrow">Shahnameh · the Book of Kings</p>
+      <h2>A thousand-year-old epic, playable.</h2>
+      <p class="lead">Ferdowsi wrote the Shahnameh — the Book of Kings — over
+        a thousand years ago to keep the Persian language and its history
+        alive. RealGram turns it into chapters and quizzes told in the
+        epic's own order, so every one you clear is a real piece of that
+        story, not filler between taps.</p>
+      <ul class="spotlight-points">
+        <li>Chapters told in the epic's own order, not shuffled trivia</li>
+        <li>REAL itself was born here, as Shahnameh's own community token</li>
+        <li>Play from the app, Telegram, or straight from a browser tab</li>
+      </ul>
+    </div>
+    <div class="spotlight-visual reveal reveal-left shahnameh-banner" style="--accent:var(--gold)" aria-hidden="true">
+      <div class="shahnameh-frame">
+        <svg class="shahnameh-mark" viewBox="0 0 24 24"><path d="M12 3c2 2.5 3 5 3 7.5 0 3-1.3 5-3 6.5-1.7-1.5-3-3.5-3-6.5C9 8 10 5.5 12 3z"/><path d="M4 11c2.2.3 3.8 1.5 4.6 3M20 11c-2.2.3-3.8 1.5-4.6 3"/></svg>
+        <p class="shahnameh-title">Shahnameh</p>
+        <p class="shahnameh-sub">The Book of Kings</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="token" class="spotlight wrap">
+    <div class="spotlight-copy reveal reveal-left" style="--accent:var(--gold)">
+      <p class="eyebrow">REAL · the shared economy</p>
+      <h2>The first Iranian token, born inside a game.</h2>
+      <p class="lead">REAL started as Shahnameh's own in-game currency and
+        grew into the balance every part of RealGram now shares —
+        positioned as the first Iranian token approved on blockchain, and
+        the first time a community token was put to work inside a game
+        rather than just traded. It's a jetton on The Open Network (TON);
+        its price is set by the open market, not by RealGram.</p>
+      <a class="spotlight-cta" href="https://dyor.io/token/EQDhq_DjQUMJqfXLP8K8J6SlOvon08XQQK0T49xon2e0xU8p" target="_blank" rel="noopener noreferrer">View REAL on DYOR →</a>
+    </div>
+    <div class="spotlight-visual reveal reveal-right token-card" style="--accent:var(--gold)">
+      <div class="token-card-head">
+        <span class="token-card-badge"><span class="spotlight-beat" style="background:var(--emerald);box-shadow:0 0 8px var(--emerald)"></span> Live</span>
+        <span class="token-card-label">REAL / USD</span>
+      </div>
+      <p class="token-price" id="tokenPrice">—</p>
+      <p class="token-change" id="tokenChange"></p>
+      <img class="token-chart" id="tokenChart" alt="REAL/USD 30-day price chart" loading="lazy" />
+      <div class="token-stats">
+        <div><span>Holders</span><b id="tokenHolders">—</b></div>
+        <div><span>Market cap</span><b id="tokenMcap">—</b></div>
+        <div><span>Liquidity</span><b id="tokenLiquidity">—</b></div>
+      </div>
+      <p class="token-note">Live data via dyor.io, refreshed on page load.</p>
+    </div>
+  </section>
+
   <section id="ecosystem" class="blend wrap">
-    <div class="reveal">
+    <div class="reveal reveal-left">
       <p class="eyebrow center">Six parts, one account</p>
       <h2 class="center">RealGram isn't three apps. It's one, with six sides.</h2>
       <p class="lead center">Every part below reads from the same REAL-ID —
         sign in once, and there's nothing left to re-link.</p>
     </div>
 
-    <div class="blend-grid blend-grid-6 reveal">
+    <div class="blend-grid blend-grid-6 reveal reveal-right">
       <div class="blend-card" style="--accent:#00E87A">
         <svg viewBox="0 0 24 24"><path d="M12 2.5l7.5 3.5v5.5c0 4.8-3.2 8.1-7.5 9.5-4.3-1.4-7.5-4.7-7.5-9.5V6z"/><path d="M9 12l2 2 4-4.4"/></svg>
         <h3>Freedom</h3>
@@ -217,7 +297,7 @@
   </section>
 
   <section id="platforms" class="platforms wrap">
-    <div class="reveal">
+    <div class="reveal reveal-right">
       <p class="eyebrow center">However you already live online</p>
       <h2 class="center">Three doors. One RealGram behind all of them.</h2>
       <p class="lead center">Telegram, a browser, the app itself — these are
@@ -225,7 +305,7 @@
         already there, whichever one you walk through.</p>
     </div>
 
-    <div class="platform-grid reveal">
+    <div class="platform-grid reveal reveal-left">
       <div class="platform-card" style="--accent:#C77DFF">
         <p class="platform-tag">Recommended</p>
         <h3>The RealGram app</h3>
@@ -252,14 +332,14 @@
   </section>
 
   <section id="global" class="locale wrap">
-    <div class="reveal">
+    <div class="reveal reveal-left">
       <p class="eyebrow center">Built for where you are</p>
       <h2 class="center">Not translated after the fact.</h2>
       <p class="lead center">Four reading experiences, each designed on its
         own terms — not one layout with the text swapped out.</p>
     </div>
 
-    <div class="locale-grid reveal">
+    <div class="locale-grid reveal reveal-right">
       <div class="locale-card">
         <p class="locale-name">فارسی</p>
         <p class="locale-desc">True right-to-left layout — bubbles, replies,
@@ -289,7 +369,7 @@
     <div class="platform-downloads">
       <a href="https://api.realgram.no/download/setalink-latest.apk" class="platform-dl-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16.5v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M5 16.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2"/><path d="M8 8.5 6.5 5.5M16 8.5l1.5-3M9.5 5h5"/><circle cx="9" cy="12.5" r=".6" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r=".6" fill="currentColor" stroke="none"/></svg>
-        <span class="platform-dl-text"><span class="platform-dl-name">Android</span><span class="platform-dl-version">v0.9.91 · direct APK</span></span>
+        <span class="platform-dl-text"><span class="platform-dl-name">Android</span><!-- VERSION_START --><span class="platform-dl-version">v0.9.93 · direct APK</span><!-- VERSION_END --></span>
       </a>
       <div class="platform-dl-btn is-disabled" aria-disabled="true" title="Coming soon">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3c.3 1.4-.2 2.8-1 3.7-.9 1-2.3 1.7-3.6 1.6-.2-1.3.4-2.7 1.2-3.6.9-1 2.4-1.6 3.4-1.7z"/><path d="M20.5 17c-.5 1.2-.8 1.8-1.5 2.8-1 1.4-2.3 3.2-4 3.2-1.5 0-1.9-1-3.9-1s-2.5 1-4 1c-1.7 0-3-1.6-4-3-2.6-3.7-2.9-8.1-1.3-10.4C3 8 4.7 7 6.3 7c1.6 0 2.6 1 4 1 1.3 0 2.1-1 4-1 1.4 0 2.9.7 4 2-3.5 2-2.9 7.3 2.2 8z"/></svg>

@@ -19,6 +19,7 @@ const SITE_ROOT = '/var/www/realgram';
 const SITE_URL = 'https://realgram.no';
 const API_BASE = 'https://shahnameh.setaei.com/api/blog';
 const STATS_API = 'https://shahnameh.setaei.com/api/public/stats';
+const VERSION_API = 'https://setalink.no/download/version.json';
 
 function get(url) {
   return new Promise((resolve, reject) => {
@@ -210,7 +211,7 @@ function renderCard(p) {
   const url = '/blog/' + encodeURIComponent(p.slug) + '/';
   const date = fmtDateShort(p.published_at);
   const img = p.cover_image ? '<img src="' + esc(p.cover_image) + '" alt="" loading="lazy">' : '';
-  return '<a class="blog-card" href="' + url + '">'
+  return '<a class="blog-card reveal" href="' + url + '">'
     + img
     + '<div class="blog-card-body">'
     + '<span class="blog-card-date">' + esc(date) + '</span>'
@@ -228,7 +229,7 @@ function renderCardFa(p) {
   const url = '/fa/blog/' + encodeURIComponent(p.slug) + '/';
   const date = fmtDateFa(p.published_at);
   const img = p.cover_image ? '<img src="' + esc(p.cover_image) + '" alt="" loading="lazy">' : '';
-  return '<a class="blog-card" href="' + url + '">'
+  return '<a class="blog-card reveal" href="' + url + '">'
     + img
     + '<div class="blog-card-body">'
     + '<span class="blog-card-date">' + esc(date) + '</span>'
@@ -449,6 +450,26 @@ async function fetchFullPosts(locale) {
 }
 
 async function main() {
+  // Blog-post generation and the homepage stats/version refresh are
+  // independent concerns hitting the same flaky upstream (shahnameh-backend
+  // restarts under load on this 1GB box). Previously a single failed fetch
+  // anywhere in the blog-post path (thrown before reaching updateStats())
+  // aborted the whole run, which is why the homepage numbers/version string
+  // went stale for good instead of just retrying clean on the next 15-min
+  // cron tick -- confirmed via generate-blog.cron.log showing zero
+  // successful "homepage stats updated" runs ever logged. Isolating this
+  // block means a blog-fetch blip no longer blocks the stats/version half.
+  try {
+    await generateBlogPages();
+  } catch (e) {
+    console.error('generate-blog: blog-post generation failed, leaving blog pages/sitemap as last-generated:', e.message);
+  }
+
+  await updateStats();
+  await updateVersion();
+}
+
+async function generateBlogPages() {
   const fullPosts = await fetchFullPosts('en');
   const fullPostsFa = await fetchFullPosts('fa');
   const faBySource = new Map(fullPostsFa.map((p) => [p.translation_of, p]));
@@ -527,9 +548,7 @@ async function main() {
   // Regenerate sitemap.xml.
   fs.writeFileSync(path.join(SITE_ROOT, 'sitemap.xml'), buildSitemap(fullPosts, fullPostsFa));
 
-  await updateStats();
-
-  console.log('generate-blog: ' + fullPosts.length + ' en post(s), ' + fullPostsFa.length + ' fa post(s) -> blog/<slug>/, fa/blog/<slug>/, blog.html, fa/blog.html, sitemap.xml, homepage stats updated');
+  console.log('generate-blog: ' + fullPosts.length + ' en post(s), ' + fullPostsFa.length + ' fa post(s) -> blog/<slug>/, fa/blog/<slug>/, blog.html, fa/blog.html, sitemap.xml');
 }
 
 const FA_DIGITS = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
@@ -578,6 +597,47 @@ async function updateStats() {
     fs.writeFileSync(faPath, patchNums(
       fs.readFileSync(faPath, 'utf8'), 'STATS_START_FA', 'STATS_END_FA',
       [toFaDigits(stats.total_users), toFaDigits(stats.players_with_progress)]
+    ));
+  }
+}
+
+/* Android "direct APK" version pill on the homepage -- pulls the same
+   version.json the app itself uses for update checks (top-level `version`,
+   i.e. whichever build the "direct APK" link on this same page actually
+   downloads), so the two can never drift apart the way the hand-typed
+   string did (was stuck at v0.9.91 while three releases shipped). */
+async function updateVersion() {
+  let version;
+  try {
+    const resp = await get(VERSION_API);
+    if (!resp || !resp.version) throw new Error('bad response shape');
+    version = resp.version;
+  } catch (e) {
+    console.error('generate-blog: failed to fetch version.json, leaving homepage version as last-generated:', e.message);
+    return;
+  }
+
+  const patchSpan = (html, markerStart, markerEnd, spanHtml) => {
+    const re = new RegExp('(<!-- ' + markerStart + ' -->)([\\s\\S]*?)(<!-- ' + markerEnd + ' -->)');
+    const m = html.match(re);
+    if (!m) {
+      console.error('generate-blog: ' + markerStart + '/' + markerEnd + ' markers not found -- version NOT updated');
+      return html;
+    }
+    return html.slice(0, m.index) + m[1] + spanHtml + m[3] + html.slice(m.index + m[0].length);
+  };
+
+  const enPath = path.join(SITE_ROOT, 'index.html');
+  fs.writeFileSync(enPath, patchSpan(
+    fs.readFileSync(enPath, 'utf8'), 'VERSION_START', 'VERSION_END',
+    '<span class="platform-dl-version">v' + version + ' · direct APK</span>'
+  ));
+
+  const faPath = path.join(SITE_ROOT, 'fa', 'index.html');
+  if (fs.existsSync(faPath)) {
+    fs.writeFileSync(faPath, patchSpan(
+      fs.readFileSync(faPath, 'utf8'), 'VERSION_START_FA', 'VERSION_END_FA',
+      '<span class="platform-dl-version">نسخه‌ی ' + toFaDigits(version) + ' · APK مستقیم</span>'
     ));
   }
 }
