@@ -92,7 +92,7 @@
       <div class="phone">
         <div class="notch"></div>
         <div class="phone-head">
-          <svg class="ph-mark" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2.5 21.5z"/><path d="M12 8.5v6"/><path d="M9 11.5h6"/></svg>
+          <img class="ph-mark" src="/brand/realtoken.png" alt="" loading="lazy">
           <span>RealGram</span>
         </div>
         <div class="phone-body">
@@ -100,7 +100,7 @@
           <div class="bubble bubble-out">Yeah — just watched it hit my balance 👀</div>
           <button class="tap-target" id="tapTarget" type="button" aria-label="Tap to preview an earn moment">
             <span class="tap-ring"></span>
-            <span class="tap-label">TAP</span>
+            <img class="tap-coin" src="/brand/realtoken.png" alt="" loading="lazy">
           </button>
           <div class="earn-toast" id="earnToast">+3 <span>REAL</span></div>
         </div>
@@ -112,8 +112,8 @@
        live GET /public/stats call, real numbers only (no fabricated
        social proof) -- do not hand-edit the numbers, re-run the script. -->
   <section class="stats-strip wrap reveal">
-    <div class="stat-item"><span class="stat-num">44</span><span class="stat-label">already on RealGram</span></div>
-    <div class="stat-item"><span class="stat-num">14</span><span class="stat-label">exploring Shahnameh</span></div>
+    <div class="stat-item"><span class="stat-num">45</span><span class="stat-label">already on RealGram</span></div>
+    <div class="stat-item"><span class="stat-num">15</span><span class="stat-label">exploring Shahnameh</span></div>
   </section>
   <!-- STATS_END -->
 
@@ -138,7 +138,7 @@
             setup, no second app.</p>
         </div>
       </li>
-      <li class="waypoint" style="--accent:#D4AF37">
+      <li class="waypoint" style="--accent:var(--gold)">
         <span class="waypoint-node"><span class="waypoint-index">02</span></span>
         <div class="waypoint-body">
           <p class="eyebrow">Play &amp; earn</p>
@@ -201,8 +201,11 @@
       <ul class="spotlight-points">
         <li>Chapters told in the epic's own order, not shuffled trivia</li>
         <li>REAL itself was born here, as Shahnameh's own community token</li>
-        <li>Play from the app, Telegram, or straight from a browser tab</li>
+        <li>Play from the app or straight from a browser tab</li>
       </ul>
+      <a class="dyor-badge" href="https://dyor.io/dapps/games/shahnameh?utm_source=dapp-badge" target="_blank" rel="noopener noreferrer">
+        <img alt="Shahnameh DYOR ranking badge" height="64" width="auto" loading="lazy" src="https://dyor.io/client/api/dapp/rank/shahnameh?theme=dark">
+      </a>
     </div>
     <div class="spotlight-visual reveal reveal-left shahnameh-banner" style="--accent:var(--gold)" aria-hidden="true">
       <div class="shahnameh-frame">
@@ -258,7 +261,7 @@
         <p>The connection layer underneath everything else — built to stay
           up on networks that fight back.</p>
       </div>
-      <div class="blend-card" style="--accent:#D4AF37">
+      <div class="blend-card" style="--accent:var(--gold)">
         <svg viewBox="0 0 24 24"><path d="M4 17 L5.5 8.5 L9.5 12 L12 6 L14.5 12 L18.5 8.5 L20 17 Z"/><path d="M5.5 20.5h13"/></svg>
         <h3>Shahnameh</h3>
         <p class="role">learn · play</p>
@@ -299,8 +302,8 @@
   <section id="platforms" class="platforms wrap">
     <div class="reveal reveal-right">
       <p class="eyebrow center">However you already live online</p>
-      <h2 class="center">Three doors. One RealGram behind all of them.</h2>
-      <p class="lead center">Telegram, a browser, the app itself — these are
+      <h2 class="center">Two doors. One RealGram behind both of them.</h2>
+      <p class="lead center">The app, or a browser tab — these are
         entrances, not separate products. Your REAL-ID and balance are
         already there, whichever one you walk through.</p>
     </div>
@@ -310,16 +313,9 @@
         <p class="platform-tag">Recommended</p>
         <h3>The RealGram app</h3>
         <p>Independent and self-contained — install it directly and it
-          keeps working even on networks where official Telegram can't be
-          reached at all.</p>
+          keeps working even on networks that actively block messaging and
+          VPN traffic.</p>
         <a href="#get" class="platform-link">Get the app →</a>
-      </div>
-      <div class="platform-card" style="--accent:#D4AF37">
-        <p class="platform-tag">If you're already there</p>
-        <h3>Enter through Telegram</h3>
-        <p>Already on official Telegram? RealGram opens right from there
-          too — same REAL-ID, same balance. Telegram is a door in, not a
-          different product.</p>
       </div>
       <div class="platform-card" style="--accent:#3399FF">
         <p class="platform-tag">No install needed</p>
@@ -369,7 +365,7 @@
     <div class="platform-downloads">
       <a href="https://api.realgram.no/download/setalink-latest.apk" class="platform-dl-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16.5v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M5 16.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2"/><path d="M8 8.5 6.5 5.5M16 8.5l1.5-3M9.5 5h5"/><circle cx="9" cy="12.5" r=".6" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r=".6" fill="currentColor" stroke="none"/></svg>
-        <span class="platform-dl-text"><span class="platform-dl-name">Android</span><!-- VERSION_START --><span class="platform-dl-version">v0.9.93 · direct APK</span><!-- VERSION_END --></span>
+        <span class="platform-dl-text"><span class="platform-dl-name">Android</span><!-- VERSION_START --><span class="platform-dl-version">v0.9.103 · direct APK</span><!-- VERSION_END --></span>
       </a>
       <div class="platform-dl-btn is-disabled" aria-disabled="true" title="Coming soon">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3c.3 1.4-.2 2.8-1 3.7-.9 1-2.3 1.7-3.6 1.6-.2-1.3.4-2.7 1.2-3.6.9-1 2.4-1.6 3.4-1.7z"/><path d="M20.5 17c-.5 1.2-.8 1.8-1.5 2.8-1 1.4-2.3 3.2-4 3.2-1.5 0-1.9-1-3.9-1s-2.5 1-4 1c-1.7 0-3-1.6-4-3-2.6-3.7-2.9-8.1-1.3-10.4C3 8 4.7 7 6.3 7c1.6 0 2.6 1 4 1 1.3 0 2.1-1 4-1 1.4 0 2.9.7 4 2-3.5 2-2.9 7.3 2.2 8z"/></svg>

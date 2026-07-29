@@ -93,7 +93,7 @@
       <div class="phone">
         <div class="notch"></div>
         <div class="phone-head">
-          <svg class="ph-mark" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2.5 21.5z"/><path d="M12 8.5v6"/><path d="M9 11.5h6"/></svg>
+          <img class="ph-mark" src="/brand/realtoken.png" alt="" loading="lazy">
           <span>رئال‌گرام</span>
         </div>
         <div class="phone-body">
@@ -101,7 +101,7 @@
           <div class="bubble bubble-out">آره — همین الان تو موجودیم افتاد 👀</div>
           <button class="tap-target" id="tapTarget" type="button" aria-label="لمس کنید تا یک لحظه‌ی کسب پاداش را ببینید">
             <span class="tap-ring"></span>
-            <span class="tap-label">لمس</span>
+            <img class="tap-coin" src="/brand/realtoken.png" alt="" loading="lazy">
           </button>
           <div class="earn-toast" id="earnToast">+۳ <span>REAL</span></div>
         </div>
@@ -113,8 +113,8 @@
        live GET /public/stats call, real numbers only -- do not hand-edit
        the numbers, re-run the script. -->
   <section class="stats-strip wrap reveal">
-    <div class="stat-item"><span class="stat-num">۴۴</span><span class="stat-label">همین حالا در رئال‌گرام</span></div>
-    <div class="stat-item"><span class="stat-num">۱۴</span><span class="stat-label">در حال کاوش شاهنامه</span></div>
+    <div class="stat-item"><span class="stat-num">۴۵</span><span class="stat-label">همین حالا در رئال‌گرام</span></div>
+    <div class="stat-item"><span class="stat-num">۱۵</span><span class="stat-label">در حال کاوش شاهنامه</span></div>
   </section>
   <!-- STATS_END_FA -->
 
@@ -139,7 +139,7 @@
             جریان نگه می‌دارد. بدون تنظیمات جدا، بدون اپ دوم.</p>
         </div>
       </li>
-      <li class="waypoint" style="--accent:#D4AF37">
+      <li class="waypoint" style="--accent:var(--gold)">
         <span class="waypoint-node"><span class="waypoint-index">02</span></span>
         <div class="waypoint-body">
           <p class="eyebrow">بازی و کسب درآمد</p>
@@ -202,8 +202,11 @@
       <ul class="spotlight-points">
         <li>فصل‌ها به همان ترتیب خود حماسه، نه ترویای درهم‌ریخته</li>
         <li>REAL خودش همین‌جا متولد شد، به‌عنوان توکن اجتماعی خود شاهنامه</li>
-        <li>از اپ، تلگرام، یا مستقیم از یک تب مرورگر بازی کنید</li>
+        <li>از اپ یا مستقیم از یک تب مرورگر بازی کنید</li>
       </ul>
+      <a class="dyor-badge" href="https://dyor.io/dapps/games/shahnameh?utm_source=dapp-badge" target="_blank" rel="noopener noreferrer">
+        <img alt="نشان رتبه‌بندی شاهنامه در DYOR" height="64" width="auto" loading="lazy" src="https://dyor.io/client/api/dapp/rank/shahnameh?theme=dark">
+      </a>
     </div>
     <div class="spotlight-visual reveal reveal-left shahnameh-banner" style="--accent:var(--gold)" aria-hidden="true">
       <div class="shahnameh-frame">
@@ -259,7 +262,7 @@
         <p>لایه‌ی اتصال زیر همه‌چیز — ساخته‌شده تا حتی در شبکه‌هایی که
           مقاومت می‌کنند، برقرار بماند.</p>
       </div>
-      <div class="blend-card" style="--accent:#D4AF37">
+      <div class="blend-card" style="--accent:var(--gold)">
         <svg viewBox="0 0 24 24"><path d="M4 17 L5.5 8.5 L9.5 12 L12 6 L14.5 12 L18.5 8.5 L20 17 Z"/><path d="M5.5 20.5h13"/></svg>
         <h3>شاهنامه</h3>
         <p class="role">یادگیری · بازی</p>
@@ -300,8 +303,8 @@
   <section id="platforms" class="platforms wrap">
     <div class="reveal reveal-right">
       <p class="eyebrow center">همان‌طور که همین حالا آنلاین زندگی می‌کنید</p>
-      <h2 class="center">سه در. یک رئال‌گرام پشت همه‌ی آن‌ها.</h2>
-      <p class="lead center">تلگرام، یک مرورگر، خود اپ — این‌ها ورودی‌اند،
+      <h2 class="center">دو در. یک رئال‌گرام پشت هر دوی آن‌ها.</h2>
+      <p class="lead center">اپ، یا یک تب مرورگر — این‌ها ورودی‌اند،
         نه محصولات جدا. REAL-ID و موجودی شما همین حالا آنجا هستند، از هر
         در که وارد شوید.</p>
     </div>
@@ -311,15 +314,9 @@
         <p class="platform-tag">توصیه‌شده</p>
         <h3>اپ رئال‌گرام</h3>
         <p>مستقل و خودکفا — مستقیم نصبش کنید و حتی روی شبکه‌هایی که
-          تلگرام رسمی اصلاً در دسترس نیست، به کار ادامه می‌دهد.</p>
+          پیام‌رسان‌ها و ترافیک وی‌پی‌ان را فعالانه مسدود می‌کنند، به کار
+          ادامه می‌دهد.</p>
         <a href="#get" class="platform-link">دریافت اپ ←</a>
-      </div>
-      <div class="platform-card" style="--accent:#D4AF37">
-        <p class="platform-tag">اگر همین حالا آنجا هستید</p>
-        <h3>از تلگرام وارد شوید</h3>
-        <p>از قبل در تلگرام رسمی هستید؟ رئال‌گرام از همان‌جا هم باز
-          می‌شود — همان REAL-ID، همان موجودی. تلگرام یک در ورودی است، نه
-          محصولی دیگر.</p>
       </div>
       <div class="platform-card" style="--accent:#3399FF">
         <p class="platform-tag">بدون نیاز به نصب</p>
@@ -370,7 +367,7 @@
     <div class="platform-downloads">
       <a href="https://api.realgram.no/download/setalink-latest.apk" class="platform-dl-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16.5v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M5 16.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2"/><path d="M8 8.5 6.5 5.5M16 8.5l1.5-3M9.5 5h5"/><circle cx="9" cy="12.5" r=".6" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r=".6" fill="currentColor" stroke="none"/></svg>
-        <span class="platform-dl-text"><span class="platform-dl-name">اندروید</span><!-- VERSION_START_FA --><span class="platform-dl-version">نسخه‌ی ۰.۹.۹۳ · APK مستقیم</span><!-- VERSION_END_FA --></span>
+        <span class="platform-dl-text"><span class="platform-dl-name">اندروید</span><!-- VERSION_START_FA --><span class="platform-dl-version">نسخه‌ی ۰.۹.۱۰۳ · APK مستقیم</span><!-- VERSION_END_FA --></span>
       </a>
       <div class="platform-dl-btn is-disabled" aria-disabled="true" title="به‌زودی">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3c.3 1.4-.2 2.8-1 3.7-.9 1-2.3 1.7-3.6 1.6-.2-1.3.4-2.7 1.2-3.6.9-1 2.4-1.6 3.4-1.7z"/><path d="M20.5 17c-.5 1.2-.8 1.8-1.5 2.8-1 1.4-2.3 3.2-4 3.2-1.5 0-1.9-1-3.9-1s-2.5 1-4 1c-1.7 0-3-1.6-4-3-2.6-3.7-2.9-8.1-1.3-10.4C3 8 4.7 7 6.3 7c1.6 0 2.6 1 4 1 1.3 0 2.1-1 4-1 1.4 0 2.9.7 4 2-3.5 2-2.9 7.3 2.2 8z"/></svg>
