@@ -37,6 +37,43 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://realgram.no/#organization",
+      "name": "RealGram",
+      "url": "https://realgram.no/",
+      "logo": "https://realgram.no/brand/realtoken.png",
+      "sameAs": ["https://www.setai.no"],
+      "parentOrganization": { "@type": "Organization", "name": "SETAEI", "url": "https://www.setai.no" }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://realgram.no/#website",
+      "url": "https://realgram.no/",
+      "name": "RealGram",
+      "publisher": { "@id": "https://realgram.no/#organization" },
+      "inLanguage": ["en", "fa"]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "RealGram",
+      "applicationCategory": "SocialNetworkingApplication",
+      "operatingSystem": "Android",
+      "url": "https://realgram.no/",
+      "downloadUrl": "https://api.realgram.no/download/setalink-latest.apk",
+      "description": "RealGram is one app built from six connected parts — Freedom (the connection layer), Shahnameh (learn & play), REAL Wallet, Messages, Clan, and Hakim AI — all under one REAL-ID.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "publisher": { "@id": "https://realgram.no/#organization" },
+      "inLanguage": ["en", "fa", "ru", "zh"]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -112,8 +149,8 @@
        live GET /public/stats call, real numbers only (no fabricated
        social proof) -- do not hand-edit the numbers, re-run the script. -->
   <section class="stats-strip wrap reveal">
-    <div class="stat-item"><span class="stat-num">45</span><span class="stat-label">already on RealGram</span></div>
-    <div class="stat-item"><span class="stat-num">15</span><span class="stat-label">exploring Shahnameh</span></div>
+    <div class="stat-item"><span class="stat-num">48</span><span class="stat-label">already on RealGram</span></div>
+    <div class="stat-item"><span class="stat-num">16</span><span class="stat-label">exploring Shahnameh</span></div>
   </section>
   <!-- STATS_END -->
 
@@ -365,7 +402,7 @@
     <div class="platform-downloads">
       <a href="https://api.realgram.no/download/setalink-latest.apk" class="platform-dl-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16.5v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M5 16.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2"/><path d="M8 8.5 6.5 5.5M16 8.5l1.5-3M9.5 5h5"/><circle cx="9" cy="12.5" r=".6" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r=".6" fill="currentColor" stroke="none"/></svg>
-        <span class="platform-dl-text"><span class="platform-dl-name">Android</span><!-- VERSION_START --><span class="platform-dl-version">v0.9.103 · direct APK</span><!-- VERSION_END --></span>
+        <span class="platform-dl-text"><span class="platform-dl-name">Android</span><!-- VERSION_START --><span class="platform-dl-version">v0.9.132 · direct APK</span><!-- VERSION_END --></span>
       </a>
       <div class="platform-dl-btn is-disabled" aria-disabled="true" title="Coming soon">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3c.3 1.4-.2 2.8-1 3.7-.9 1-2.3 1.7-3.6 1.6-.2-1.3.4-2.7 1.2-3.6.9-1 2.4-1.6 3.4-1.7z"/><path d="M20.5 17c-.5 1.2-.8 1.8-1.5 2.8-1 1.4-2.3 3.2-4 3.2-1.5 0-1.9-1-3.9-1s-2.5 1-4 1c-1.7 0-3-1.6-4-3-2.6-3.7-2.9-8.1-1.3-10.4C3 8 4.7 7 6.3 7c1.6 0 2.6 1 4 1 1.3 0 2.1-1 4-1 1.4 0 2.9.7 4 2-3.5 2-2.9 7.3 2.2 8z"/></svg>
