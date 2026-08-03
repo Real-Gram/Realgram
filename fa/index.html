@@ -126,22 +126,111 @@
       </ul>
     </div>
 
-    <div class="hero-stage" aria-hidden="true">
-      <div class="phone">
+    <div class="hero-stage">
+      <p class="wt-explore-label" aria-hidden="true">ببینید رئال‌گرام چطور کار می‌کند</p>
+      <div class="phone wt-phone" id="wtPhone" aria-hidden="true">
         <div class="notch"></div>
         <div class="phone-head">
           <img class="ph-mark" src="/brand/realtoken.png" alt="" loading="lazy">
           <span>رئال‌گرام</span>
-        </div>
-        <div class="phone-body">
-          <div class="bubble bubble-in">سلام! پاداش دعوتت رو دیدی؟</div>
-          <div class="bubble bubble-out">آره — همین الان تو موجودیم افتاد 👀</div>
-          <button class="tap-target" id="tapTarget" type="button" aria-label="لمس کنید تا یک لحظه‌ی کسب پاداش را ببینید">
-            <span class="tap-ring"></span>
-            <img class="tap-coin" src="/brand/realtoken.png" alt="" loading="lazy">
+          <button class="wt-avatar-btn" id="wtMenuBtn" type="button" tabindex="-1">
+            <span class="wt-avatar-dot"></span>
           </button>
-          <div class="earn-toast" id="earnToast">+۳ <span>REAL</span></div>
         </div>
+
+        <div class="wt-screen" id="wtScreen">
+          <!-- خانه -->
+          <section class="wt-scene wt-scene-home is-current" data-scene="home">
+            <div class="wt-balance-card">
+              <span class="wt-balance-label">موجودی REAL</span>
+              <span class="wt-balance-value"><span id="wtBalance">۱٬۲۴۸٫۶</span> <b>REAL</b></span>
+            </div>
+            <div class="wt-status-row">
+              <span class="wt-status-dot"></span>
+              <span class="wt-status-text">متصل</span>
+              <span class="wt-speed">↓ <span id="wtSpeed">۴۲٫۳</span> Mbps</span>
+            </div>
+            <button class="wt-cta" id="wtCta" type="button" tabindex="-1">
+              <span class="wt-cta-glow"></span>
+              <span class="wt-cta-ring"></span>
+              اتصال
+            </button>
+          </section>
+
+          <!-- پیام‌ها -->
+          <section class="wt-scene wt-scene-messages" data-scene="messages">
+            <p class="wt-scene-title">پیام‌ها</p>
+            <div class="wt-msg-list" id="wtMsgList">
+              <div class="wt-msg-row">
+                <span class="wt-avatar-sm" style="--c:#3399FF">آ</span>
+                <span class="wt-msg-meta"><b>آریا</b><i>می‌بینمت تو جنگ قبیله 🔥</i></span>
+                <span class="wt-msg-time">۲د</span>
+              </div>
+              <div class="wt-msg-row">
+                <span class="wt-avatar-sm" style="--c:#C77DFF">ر</span>
+                <span class="wt-msg-meta"><b>کلن رستم</b><i>۳ عضو به سطح ۱۲ رسیدند</i></span>
+                <span class="wt-msg-time">۱۸د</span>
+              </div>
+              <div class="wt-msg-row wt-msg-new" id="wtMsgNew">
+                <span class="wt-avatar-sm" style="--c:var(--gold)">س</span>
+                <span class="wt-msg-meta"><b>سینا</b><i>سلام! پاداش دعوتت رو دیدی؟</i></span>
+                <span class="wt-unread-dot"></span>
+              </div>
+            </div>
+            <div class="wt-thread" id="wtThread">
+              <p class="wt-thread-name">سینا</p>
+              <div class="bubble bubble-in">سلام! پاداش دعوتت رو دیدی؟</div>
+              <div class="wt-typing" id="wtTyping"><span></span><span></span><span></span></div>
+              <div class="bubble bubble-out wt-bubble-in" id="wtReplyBubble">آره — همین الان تو موجودیم افتاد 👀</div>
+            </div>
+          </section>
+
+          <!-- شاهنامه -->
+          <section class="wt-scene wt-scene-game" data-scene="game">
+            <div class="wt-game-header">
+              <span class="wt-game-avatar">🛡</span>
+              <span class="wt-game-meta"><b>پهلوان</b><i>XP ۲٬۱۴۰</i></span>
+              <span class="wt-game-chip">🪙 <span id="wtZar">۸۶۰</span></span>
+            </div>
+            <div class="wt-chapter-card">
+              <p class="wt-chapter-eyebrow">فصل ۱۲</p>
+              <h4>رستم — پهلوان دوران</h4>
+              <div class="wt-chapter-bar"><span id="wtChapterFill"></span></div>
+            </div>
+            <div class="wt-reward-pop" id="wtRewardPop">+۴۰ <b>REAL</b></div>
+          </section>
+
+          <!-- آزادی -->
+          <section class="wt-scene wt-scene-freedom" data-scene="freedom">
+            <p class="wt-scene-title">آزادی · سرورها</p>
+            <div class="wt-node-list">
+              <div class="wt-node-row"><span class="wt-node-dot"></span>فنلاند</div>
+              <div class="wt-node-row" id="wtNodeGermany"><span class="wt-node-dot"></span>آلمان</div>
+              <div class="wt-node-row wt-node-locked"><span class="wt-node-dot"></span>Starlink<span class="wt-lock">🔒</span></div>
+            </div>
+            <div class="wt-connect-state" id="wtConnectState">
+              <span class="wt-connect-ring"></span>
+              <span class="wt-connect-text" id="wtConnectText">در حال اتصال…</span>
+            </div>
+          </section>
+
+          <!-- منوی کشویی (روکش، نه یک صفحه‌ی قابل‌انتخاب) -->
+          <div class="wt-scrim" id="wtScrim"></div>
+          <div class="wt-drawer" id="wtDrawer">
+            <button class="wt-drawer-item" data-target="home" tabindex="-1"><span class="wt-drawer-icon">⬡</span>خانه</button>
+            <button class="wt-drawer-item" data-target="messages" id="wtDrawerMessages" tabindex="-1"><span class="wt-drawer-icon">✉</span>گفتگوها</button>
+            <button class="wt-drawer-item" data-target="game" tabindex="-1"><span class="wt-drawer-icon">⚔</span>شاهنامه</button>
+            <button class="wt-drawer-item" data-target="freedom" tabindex="-1"><span class="wt-drawer-icon">🌐</span>آزادی</button>
+            <button class="wt-drawer-item" data-target="clan" tabindex="-1"><span class="wt-drawer-icon">👥</span>قبیله</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="wt-controls" id="wtControls" role="tablist" aria-label="گشت‌وگذار در اپ رئال‌گرام">
+        <button class="wt-dot is-active" data-scene="home" role="tab" aria-selected="true">خانه</button>
+        <button class="wt-dot" data-scene="messages" role="tab" aria-selected="false">گفتگوها</button>
+        <button class="wt-dot" data-scene="game" role="tab" aria-selected="false">شاهنامه</button>
+        <button class="wt-dot" data-scene="freedom" role="tab" aria-selected="false">آزادی</button>
       </div>
     </div>
   </section>
@@ -150,8 +239,8 @@
        live GET /public/stats call, real numbers only -- do not hand-edit
        the numbers, re-run the script. -->
   <section class="stats-strip wrap reveal">
-    <div class="stat-item"><span class="stat-num">۴۸</span><span class="stat-label">همین حالا در رئال‌گرام</span></div>
-    <div class="stat-item"><span class="stat-num">۱۶</span><span class="stat-label">در حال کاوش شاهنامه</span></div>
+    <div class="stat-item"><span class="stat-num">۵۲</span><span class="stat-label">همین حالا در رئال‌گرام</span></div>
+    <div class="stat-item"><span class="stat-num">۱۷</span><span class="stat-label">در حال کاوش شاهنامه</span></div>
   </section>
   <!-- STATS_END_FA -->
 
@@ -404,7 +493,7 @@
     <div class="platform-downloads">
       <a href="https://api.realgram.no/download/setalink-latest.apk" class="platform-dl-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16.5v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M5 16.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2"/><path d="M8 8.5 6.5 5.5M16 8.5l1.5-3M9.5 5h5"/><circle cx="9" cy="12.5" r=".6" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r=".6" fill="currentColor" stroke="none"/></svg>
-        <span class="platform-dl-text"><span class="platform-dl-name">اندروید</span><!-- VERSION_START_FA --><span class="platform-dl-version">نسخه‌ی ۰.۹.۱۳۲ · APK مستقیم</span><!-- VERSION_END_FA --></span>
+        <span class="platform-dl-text"><span class="platform-dl-name">اندروید</span><!-- VERSION_START_FA --><span class="platform-dl-version">نسخه‌ی ۰.۹.۱۳۶ · APK مستقیم</span><!-- VERSION_END_FA --></span>
       </a>
       <div class="platform-dl-btn is-disabled" aria-disabled="true" title="به‌زودی">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3c.3 1.4-.2 2.8-1 3.7-.9 1-2.3 1.7-3.6 1.6-.2-1.3.4-2.7 1.2-3.6.9-1 2.4-1.6 3.4-1.7z"/><path d="M20.5 17c-.5 1.2-.8 1.8-1.5 2.8-1 1.4-2.3 3.2-4 3.2-1.5 0-1.9-1-3.9-1s-2.5 1-4 1c-1.7 0-3-1.6-4-3-2.6-3.7-2.9-8.1-1.3-10.4C3 8 4.7 7 6.3 7c1.6 0 2.6 1 4 1 1.3 0 2.1-1 4-1 1.4 0 2.9.7 4 2-3.5 2-2.9 7.3 2.2 8z"/></svg>
@@ -451,5 +540,6 @@
 </footer>
 
 <script src="/app.js"></script>
+<script src="/walkthrough.js" defer></script>
 </body>
 </html>

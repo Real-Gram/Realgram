@@ -16,48 +16,11 @@
     });
   }
 
-  // Tap-to-earn preview — mirrors the app's real coin-burst spec
-  // (BRAND.md §4: scale 0.93 on press, gold radial burst, ~2600ms life).
-  var tapTarget = document.getElementById("tapTarget");
-  var toast = document.getElementById("earnToast");
-  var phoneBody = document.querySelector(".phone-body");
+  // Tap-to-earn preview inside the phone mockup was replaced by the full
+  // animated app walkthrough (walkthrough.js, loaded separately) — the old
+  // #tapTarget/#earnToast/.phone-body element IDs this block used to wire
+  // up no longer exist in the mockup's markup.
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var busy = false;
-
-  function burst() {
-    if (!phoneBody) return;
-    var count = reduceMotion ? 0 : 10;
-    for (var i = 0; i < count; i++) {
-      var p = document.createElement("span");
-      p.className = "burst-particle";
-      var angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
-      var dist = 46 + Math.random() * 34;
-      p.style.setProperty("--dx", Math.cos(angle) * dist + "px");
-      p.style.setProperty("--dy", Math.sin(angle) * dist - 30 + "px");
-      p.style.transition = "transform 900ms cubic-bezier(.15,.7,.3,1), opacity 900ms ease";
-      phoneBody.appendChild(p);
-      requestAnimationFrame(function (el, dx, dy) {
-        return function () {
-          el.style.transform = "translate(" + dx + ", " + dy + ")";
-          el.style.opacity = "0";
-        };
-      }(p, p.style.getPropertyValue("--dx"), p.style.getPropertyValue("--dy")));
-      (function (el) {
-        setTimeout(function () { el.remove(); }, 950);
-      })(p);
-    }
-  }
-
-  if (tapTarget && toast) {
-    tapTarget.addEventListener("click", function () {
-      if (busy) return;
-      busy = true;
-      burst();
-      toast.classList.add("show");
-      setTimeout(function () { toast.classList.remove("show"); }, 1300);
-      setTimeout(function () { busy = false; }, 1500);
-    });
-  }
 
   // Journey waypoints + general section reveals fade in as they scroll into
   // view. Same observer covers both .waypoint (thread stops) and .reveal
@@ -158,5 +121,81 @@
         dustCanvas.style.opacity = "0.28";
       });
     }
+  }
+
+  // Freedom spotlight -- twinkling stars behind the orbit banner, same
+  // generator as the app's own Starlink screen (docs/realgram/design/
+  // theme-package). Decorative only, so it's skipped under reduced motion.
+  if (!reduceMotion) {
+    var starsHost = document.getElementById("freedomStars");
+    if (starsHost) {
+      for (var s = 0; s < 26; s++) {
+        var star = document.createElement("span");
+        star.className = "orbit-star";
+        star.style.left = (Math.random() * 100) + "%";
+        star.style.top = (Math.random() * 70) + "%";
+        star.style.animationDelay = (Math.random() * 3) + "s";
+        starsHost.appendChild(star);
+      }
+    }
+  }
+
+  // REAL token spotlight -- live price/stats straight from dyor.io's public,
+  // CORS-open API (same source 3real.no's own market section uses), fetched
+  // client-side since this site has no backend of its own. Fails soft: on
+  // any error the static copy and the "View on DYOR" link still stand.
+  var tokenPriceEl = document.getElementById("tokenPrice");
+  if (tokenPriceEl) {
+    var REAL_JETTON = "EQDhq_DjQUMJqfXLP8K8J6SlOvon08XQQK0T49xon2e0xU8p";
+    var DYOR_BASE = "https://api.dyor.io/v1/jettons/" + REAL_JETTON;
+
+    function dyorAmount(a) {
+      if (!a || a.value == null) return null;
+      return Number(a.value) / Math.pow(10, a.decimals || 0);
+    }
+    function fmtUsd(n) {
+      if (n == null) return "—";
+      var digits = n < 1 ? 4 : 2;
+      return "$" + n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+    function fmtCompactUsd(n) {
+      if (n == null) return "—";
+      return "$" + n.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 1 });
+    }
+
+    fetch(DYOR_BASE)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var d = data && data.details;
+        if (!d) return;
+        var priceUsd = dyorAmount(d.priceUsd);
+        tokenPriceEl.textContent = fmtUsd(priceUsd);
+
+        var holdersEl = document.getElementById("tokenHolders");
+        if (holdersEl && d.holdersCount != null) {
+          holdersEl.textContent = Number(d.holdersCount).toLocaleString("en-US");
+        }
+        var mcapEl = document.getElementById("tokenMcap");
+        if (mcapEl) mcapEl.textContent = fmtCompactUsd(dyorAmount(d.mcap));
+        var liqEl = document.getElementById("tokenLiquidity");
+        if (liqEl) liqEl.textContent = fmtCompactUsd(dyorAmount(d.liquidityUsd));
+
+        var chartEl = document.getElementById("tokenChart");
+        var preview = (d.chartPreviews || []).find(function (c) { return c.color === "dark"; });
+        if (chartEl && preview) chartEl.src = preview.url;
+      })
+      .catch(function () { /* static copy + DYOR link already cover this */ });
+
+    fetch(DYOR_BASE + "/stats")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var day = data && data.priceChange && data.priceChange.usd && data.priceChange.usd.day;
+        var changeEl = document.getElementById("tokenChange");
+        if (!changeEl || !day || day.changePercent == null) return;
+        var pct = day.changePercent;
+        changeEl.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "% (24h)";
+        changeEl.classList.add(pct >= 0 ? "is-up" : "is-down");
+      })
+      .catch(function () { /* leave the 24h line blank */ });
   }
 })();
