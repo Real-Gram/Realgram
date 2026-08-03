@@ -126,110 +126,16 @@
     </div>
 
     <div class="hero-stage">
-      <p class="wt-explore-label" aria-hidden="true">See how RealGram works</p>
+      <p class="wt-explore-label" aria-hidden="true">A real conversation, inside RealGram</p>
       <div class="phone wt-phone" id="wtPhone" aria-hidden="true">
         <div class="notch"></div>
         <div class="phone-head">
           <img class="ph-mark" src="/brand/realtoken.png" alt="" loading="lazy">
-          <span>RealGram</span>
-          <button class="wt-avatar-btn" id="wtMenuBtn" type="button" tabindex="-1">
-            <span class="wt-avatar-dot"></span>
-          </button>
+          <span>Aria</span>
+          <span class="wt-avatar-dot"></span>
         </div>
 
-        <div class="wt-screen" id="wtScreen">
-          <!-- HOME -->
-          <section class="wt-scene wt-scene-home is-current" data-scene="home">
-            <div class="wt-balance-card">
-              <span class="wt-balance-label">REAL balance</span>
-              <span class="wt-balance-value"><span id="wtBalance">1,248.6</span> <b>REAL</b></span>
-            </div>
-            <div class="wt-status-row">
-              <span class="wt-status-dot"></span>
-              <span class="wt-status-text">Connected</span>
-              <span class="wt-speed">↓ <span id="wtSpeed">42.3</span> Mbps</span>
-            </div>
-            <button class="wt-cta" id="wtCta" type="button" tabindex="-1">
-              <span class="wt-cta-glow"></span>
-              <span class="wt-cta-ring"></span>
-              Connect
-            </button>
-          </section>
-
-          <!-- MESSAGES -->
-          <section class="wt-scene wt-scene-messages" data-scene="messages">
-            <p class="wt-scene-title">Messages</p>
-            <div class="wt-msg-list" id="wtMsgList">
-              <div class="wt-msg-row">
-                <span class="wt-avatar-sm" style="--c:#3399FF">A</span>
-                <span class="wt-msg-meta"><b>Aria</b><i>See you at the clan war 🔥</i></span>
-                <span class="wt-msg-time">2m</span>
-              </div>
-              <div class="wt-msg-row">
-                <span class="wt-avatar-sm" style="--c:#C77DFF">R</span>
-                <span class="wt-msg-meta"><b>Rostam Clan</b><i>3 members reached level 12</i></span>
-                <span class="wt-msg-time">18m</span>
-              </div>
-              <div class="wt-msg-row wt-msg-new" id="wtMsgNew">
-                <span class="wt-avatar-sm" style="--c:var(--gold)">S</span>
-                <span class="wt-msg-meta"><b>Sina</b><i>Salaam! Did you see the referral bonus land?</i></span>
-                <span class="wt-unread-dot"></span>
-              </div>
-            </div>
-            <div class="wt-thread" id="wtThread">
-              <p class="wt-thread-name">Sina</p>
-              <div class="bubble bubble-in">Salaam! Did you see the referral bonus land?</div>
-              <div class="wt-typing" id="wtTyping"><span></span><span></span><span></span></div>
-              <div class="bubble bubble-out wt-bubble-in" id="wtReplyBubble">Yeah — just watched it hit my balance 👀</div>
-            </div>
-          </section>
-
-          <!-- GAME / SHAHNAMEH -->
-          <section class="wt-scene wt-scene-game" data-scene="game">
-            <div class="wt-game-header">
-              <span class="wt-game-avatar">🛡</span>
-              <span class="wt-game-meta"><b>Pahlavan</b><i>XP 2,140</i></span>
-              <span class="wt-game-chip">🪙 <span id="wtZar">860</span></span>
-            </div>
-            <div class="wt-chapter-card">
-              <p class="wt-chapter-eyebrow">Chapter 12</p>
-              <h4>Rostam — Pahlavan of the Age</h4>
-              <div class="wt-chapter-bar"><span id="wtChapterFill"></span></div>
-            </div>
-            <div class="wt-reward-pop" id="wtRewardPop">+40 <b>REAL</b></div>
-          </section>
-
-          <!-- FREEDOM / NODES -->
-          <section class="wt-scene wt-scene-freedom" data-scene="freedom">
-            <p class="wt-scene-title">Freedom · Nodes</p>
-            <div class="wt-node-list">
-              <div class="wt-node-row"><span class="wt-node-dot"></span>Finland</div>
-              <div class="wt-node-row" id="wtNodeGermany"><span class="wt-node-dot"></span>Germany</div>
-              <div class="wt-node-row wt-node-locked"><span class="wt-node-dot"></span>Starlink<span class="wt-lock">🔒</span></div>
-            </div>
-            <div class="wt-connect-state" id="wtConnectState">
-              <span class="wt-connect-ring"></span>
-              <span class="wt-connect-text" id="wtConnectText">Connecting…</span>
-            </div>
-          </section>
-
-          <!-- MENU DRAWER (overlay, not a nav-selectable scene) -->
-          <div class="wt-scrim" id="wtScrim"></div>
-          <div class="wt-drawer" id="wtDrawer">
-            <button class="wt-drawer-item" data-target="home" tabindex="-1"><span class="wt-drawer-icon">⬡</span>Home</button>
-            <button class="wt-drawer-item" data-target="messages" id="wtDrawerMessages" tabindex="-1"><span class="wt-drawer-icon">✉</span>Messages</button>
-            <button class="wt-drawer-item" data-target="game" tabindex="-1"><span class="wt-drawer-icon">⚔</span>Play</button>
-            <button class="wt-drawer-item" data-target="freedom" tabindex="-1"><span class="wt-drawer-icon">🌐</span>Freedom</button>
-            <button class="wt-drawer-item" data-target="clan" tabindex="-1"><span class="wt-drawer-icon">👥</span>Clan</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="wt-controls" id="wtControls" role="tablist" aria-label="RealGram app walkthrough">
-        <button class="wt-dot is-active" data-scene="home" role="tab" aria-selected="true">Home</button>
-        <button class="wt-dot" data-scene="messages" role="tab" aria-selected="false">Messages</button>
-        <button class="wt-dot" data-scene="game" role="tab" aria-selected="false">Play</button>
-        <button class="wt-dot" data-scene="freedom" role="tab" aria-selected="false">Freedom</button>
+        <div class="wt-chat-feed" id="wtChatFeed"></div>
       </div>
     </div>
   </section>

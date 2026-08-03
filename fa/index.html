@@ -127,110 +127,16 @@
     </div>
 
     <div class="hero-stage">
-      <p class="wt-explore-label" aria-hidden="true">ببینید رئال‌گرام چطور کار می‌کند</p>
+      <p class="wt-explore-label" aria-hidden="true">یک گفتگوی واقعی، داخل رئال‌گرام</p>
       <div class="phone wt-phone" id="wtPhone" aria-hidden="true">
         <div class="notch"></div>
         <div class="phone-head">
           <img class="ph-mark" src="/brand/realtoken.png" alt="" loading="lazy">
-          <span>رئال‌گرام</span>
-          <button class="wt-avatar-btn" id="wtMenuBtn" type="button" tabindex="-1">
-            <span class="wt-avatar-dot"></span>
-          </button>
+          <span>آریا</span>
+          <span class="wt-avatar-dot"></span>
         </div>
 
-        <div class="wt-screen" id="wtScreen">
-          <!-- خانه -->
-          <section class="wt-scene wt-scene-home is-current" data-scene="home">
-            <div class="wt-balance-card">
-              <span class="wt-balance-label">موجودی REAL</span>
-              <span class="wt-balance-value"><span id="wtBalance">۱٬۲۴۸٫۶</span> <b>REAL</b></span>
-            </div>
-            <div class="wt-status-row">
-              <span class="wt-status-dot"></span>
-              <span class="wt-status-text">متصل</span>
-              <span class="wt-speed">↓ <span id="wtSpeed">۴۲٫۳</span> Mbps</span>
-            </div>
-            <button class="wt-cta" id="wtCta" type="button" tabindex="-1">
-              <span class="wt-cta-glow"></span>
-              <span class="wt-cta-ring"></span>
-              اتصال
-            </button>
-          </section>
-
-          <!-- پیام‌ها -->
-          <section class="wt-scene wt-scene-messages" data-scene="messages">
-            <p class="wt-scene-title">پیام‌ها</p>
-            <div class="wt-msg-list" id="wtMsgList">
-              <div class="wt-msg-row">
-                <span class="wt-avatar-sm" style="--c:#3399FF">آ</span>
-                <span class="wt-msg-meta"><b>آریا</b><i>می‌بینمت تو جنگ قبیله 🔥</i></span>
-                <span class="wt-msg-time">۲د</span>
-              </div>
-              <div class="wt-msg-row">
-                <span class="wt-avatar-sm" style="--c:#C77DFF">ر</span>
-                <span class="wt-msg-meta"><b>کلن رستم</b><i>۳ عضو به سطح ۱۲ رسیدند</i></span>
-                <span class="wt-msg-time">۱۸د</span>
-              </div>
-              <div class="wt-msg-row wt-msg-new" id="wtMsgNew">
-                <span class="wt-avatar-sm" style="--c:var(--gold)">س</span>
-                <span class="wt-msg-meta"><b>سینا</b><i>سلام! پاداش دعوتت رو دیدی؟</i></span>
-                <span class="wt-unread-dot"></span>
-              </div>
-            </div>
-            <div class="wt-thread" id="wtThread">
-              <p class="wt-thread-name">سینا</p>
-              <div class="bubble bubble-in">سلام! پاداش دعوتت رو دیدی؟</div>
-              <div class="wt-typing" id="wtTyping"><span></span><span></span><span></span></div>
-              <div class="bubble bubble-out wt-bubble-in" id="wtReplyBubble">آره — همین الان تو موجودیم افتاد 👀</div>
-            </div>
-          </section>
-
-          <!-- شاهنامه -->
-          <section class="wt-scene wt-scene-game" data-scene="game">
-            <div class="wt-game-header">
-              <span class="wt-game-avatar">🛡</span>
-              <span class="wt-game-meta"><b>پهلوان</b><i>XP ۲٬۱۴۰</i></span>
-              <span class="wt-game-chip">🪙 <span id="wtZar">۸۶۰</span></span>
-            </div>
-            <div class="wt-chapter-card">
-              <p class="wt-chapter-eyebrow">فصل ۱۲</p>
-              <h4>رستم — پهلوان دوران</h4>
-              <div class="wt-chapter-bar"><span id="wtChapterFill"></span></div>
-            </div>
-            <div class="wt-reward-pop" id="wtRewardPop">+۴۰ <b>REAL</b></div>
-          </section>
-
-          <!-- آزادی -->
-          <section class="wt-scene wt-scene-freedom" data-scene="freedom">
-            <p class="wt-scene-title">آزادی · سرورها</p>
-            <div class="wt-node-list">
-              <div class="wt-node-row"><span class="wt-node-dot"></span>فنلاند</div>
-              <div class="wt-node-row" id="wtNodeGermany"><span class="wt-node-dot"></span>آلمان</div>
-              <div class="wt-node-row wt-node-locked"><span class="wt-node-dot"></span>Starlink<span class="wt-lock">🔒</span></div>
-            </div>
-            <div class="wt-connect-state" id="wtConnectState">
-              <span class="wt-connect-ring"></span>
-              <span class="wt-connect-text" id="wtConnectText">در حال اتصال…</span>
-            </div>
-          </section>
-
-          <!-- منوی کشویی (روکش، نه یک صفحه‌ی قابل‌انتخاب) -->
-          <div class="wt-scrim" id="wtScrim"></div>
-          <div class="wt-drawer" id="wtDrawer">
-            <button class="wt-drawer-item" data-target="home" tabindex="-1"><span class="wt-drawer-icon">⬡</span>خانه</button>
-            <button class="wt-drawer-item" data-target="messages" id="wtDrawerMessages" tabindex="-1"><span class="wt-drawer-icon">✉</span>گفتگوها</button>
-            <button class="wt-drawer-item" data-target="game" tabindex="-1"><span class="wt-drawer-icon">⚔</span>شاهنامه</button>
-            <button class="wt-drawer-item" data-target="freedom" tabindex="-1"><span class="wt-drawer-icon">🌐</span>آزادی</button>
-            <button class="wt-drawer-item" data-target="clan" tabindex="-1"><span class="wt-drawer-icon">👥</span>قبیله</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="wt-controls" id="wtControls" role="tablist" aria-label="گشت‌وگذار در اپ رئال‌گرام">
-        <button class="wt-dot is-active" data-scene="home" role="tab" aria-selected="true">خانه</button>
-        <button class="wt-dot" data-scene="messages" role="tab" aria-selected="false">گفتگوها</button>
-        <button class="wt-dot" data-scene="game" role="tab" aria-selected="false">شاهنامه</button>
-        <button class="wt-dot" data-scene="freedom" role="tab" aria-selected="false">آزادی</button>
+        <div class="wt-chat-feed" id="wtChatFeed"></div>
       </div>
     </div>
   </section>
