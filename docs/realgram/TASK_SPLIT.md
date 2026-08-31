@@ -17,11 +17,24 @@ Whoever is running an agent session on a given box should work the rows below th
 
 Access needed: **`.221`** for export steps, **`.88`** to receive.
 
-- [ ] Export `data/analytics.db` (SQLite — devices, app_events, settings, quota_economy) from `.221`, hand off to `.88`. Confirm schema/size first; this may just be a straight `scp` + service pointed at the copy.
-- [ ] Inventory `.221`'s nginx+PHP-FPM setalink.no site (webroot `/var/www/setalink`) — decide with Khabat whether the public site itself moves as-is, gets folded into `realgram.no`, or is retired (this is a branding call, not a pure infra one — don't decide unilaterally).
-- [ ] Inventory `.221`'s **own** Xray/VPN exit node config (the issue body says `.221` has "Xray/VPN service config for this box's own exit node" — this is a *third*, so-far-undocumented exit node, distinct from the one already running on `.88`). Get its server_names/ports/cert domain and figure out: is it being merged into `.88`'s edge, kept as a second exit node under a new name, or decommissioned? Needs Khabat's call before touching it.
-- [ ] Inventory the node-health / real-ssh-worker cron jobs on `.221` (`crontab -l`, `/etc/cron.d/`) and recreate equivalents on `.88` (or confirm they're superseded by something already running there).
-- [ ] Confirm whether Nasrin's BIAP Expo tunnel needs to keep running on `.221` or has already fully moved to `.88` per [[biap-realgram-project]] — don't kill it on `.221` until confirmed redundant.
+- [x] **Export `data/analytics.db`** — schema/size confirmed 2026-08-31 (from `.221`): 9.3MB, 101 tables, 194 rows in `devices`, 22,622 in `app_events`. Small enough for a straight `scp` + point the service at the copy, no migration tooling needed. Not yet actually copied to `.88` — next step for whoever has write access on `.88`'s end.
+- [ ] Inventory `.221`'s nginx+PHP-FPM setalink.no site (webroot `/var/www/setalink`) — decide with Khabat whether the public site itself moves as-is, gets folded into `realgram.no`, or is retired (this is a branding call, not a pure infra one — don't decide unilaterally). **Inventory done 2026-08-31:** `sites-enabled/` on `.221` has `api.setalink.no`, `setalink-landing` (the main site), `calling-relay-ws`, `default` — plus, worth flagging, **`app.dadashi.no`** (Dr. Nasrin Dadashi's own unrelated site, also hosted on this box — needs its own decision if `.221` gets decommissioned, out of scope for this migration otherwise). PHP-FPM: single pool, `www.conf`.
+- [x] **Inventory `.221`'s own Xray/VPN exit node config — DONE, with a clear recommendation.** `.221` runs a live `xray.service` (systemd, active) with the *identical* inbound layout to `.88`'s edge: `vless` on `ws:10000` / `xhttp:10001` / `httpupgrade:10002`, plus a Reality inbound on `:8443` decoy-SNI'd as `www.cloudflare.com`/`www.microsoft.com`. nginx's own `stream{}` map on `.221` still has a `vpn.setalink.no → 127.0.0.1:4434` entry too. **But it's very likely dead:** `dig vpn.setalink.no` already resolves to `5.249.252.88`, not `.221`, so no real traffic reaches `.221`'s copy of that SNI; it's also not registered under any node id in `public/v1.php` (checked every node's `address` field — no match for `5.249.252.221`), so the app's server list never hands it out either. `/var/log/xray/access.log` for the last ~1.5h shows *zero* connections on the ws/xhttp/httpup/reality inbounds — the only entries are `.221`'s own internal health-check pinging `api` on `127.0.0.1:8344` every 5 minutes. Recommendation: this looks like orphaned infra (maybe a predecessor of `.88`'s edge, or a same-box test that was never fully decommissioned) that's safe to shut down — but per the guardrail below, that's Khabat's call, not made here.
+- [x] **Inventory the node-health / real-ssh-worker cron jobs — DONE, and there's more than the plan named.** Found via `crontab -l` (root) + `/etc/cron.d/` + `systemctl list-timers`, all on `.221`:
+  - Root crontab (all critical to the live VPN service, all currently only running on `.221`):
+    - `*/5 * * * *` — `poll-traffic.sh` (xray traffic stats)
+    - `*/2 * * * *` — `parse-last-seen.sh` (device `last_seen_at` from access log)
+    - `*/2 * * * *` — `scripts/export-xray-stats.sh` (admin-dashboard xray stats)
+    - `*/2 * * * *` — `scripts/check-node-health.sh` (writes `data/node_health.json` — this is the one the plan named)
+    - `*/10 * * * *` — `scripts/update-real-rate.php` (REAL/USD rate for premium pricing)
+    - `0 5 * * *` — `scripts/sync-adsgram-daily.php` (AdsGram revenue sync)
+  - `/etc/cron.d/` (ubuntu user):
+    - `* * * * *` — `real-ssh-worker.php` (the one the plan named — drains `real_ssh_devices` queue into `authorized_keys`)
+    - `* * * * *` — `vps-helper-worker.php` (drains `vps_helpers` queue)
+    - `17 6 * * *` — `gsc_cron.php` (daily Search Console → keyword_ranks sync)
+  - systemd timer: `setalink-watchdog.timer` (fires every ~1 min, `setalink-watchdog.service`)
+  - None of these have been recreated on `.88` yet — whoever has `.88` access needs to check which are already superseded there (e.g. `.88` almost certainly needs its own node-health probe once it's carrying real traffic) vs. which need a straight port.
+- [x] **Confirm Nasrin's BIAP Expo tunnel status — DONE.** Still actively running on `.221` (`ps aux` shows `expo start --tunnel --clear` + the ngrok helper process, started 2026-08-25, PM2-managed under the `nasrin` user) — **not** moved to `.88`. Do not touch/kill it here.
 
 ## Work item B — rebrand `vpn.setalink.no` → realgram-branded domain
 
