@@ -197,17 +197,35 @@ jobs:
       # signed by Microsoft directly, not by our test cert, so installing
       # them doesn't hit the "publisher could not be verified" prompt —
       # one-time double-click install, then setalink.exe just runs.
+      # 2026-09-09: AppContainerApplication is now false in setalink.vcxproj
+      # (unpackaged desktop-launch test). Confirmed on a real CI run
+      # (XS227/SetaLink fix/windows-unpackaged-launch, run 33820801742) that
+      # this still produces the loose Release exe at
+      # windows/x64/Release/setalink/setalink.exe exactly as before, but
+      # produces NO AppPackages/MSIX output at all — packaging simply doesn't
+      # happen for a non-AppContainer app. That run's hard requirement for an
+      # AppPackages/Dependencies folder is exactly what failed it. Treat that
+      # folder as optional here, not required — "Stage installer inputs"
+      # below has its own fallback for the runtime DLLs it used to hold.
       - name: Locate build output
         working-directory: setalink/mobile-app/windows
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Recurse -Filter "setalink.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) { Write-Error "No setalink.exe found under windows/x64/Release"; exit 1 }
-          Write-Host "Found exe: $($exe.FullName)"
+          Write-Host "All setalink.exe candidates found under windows/:"
+          $candidates = Get-ChildItem -Recurse -Filter "setalink.exe" -ErrorAction SilentlyContinue
+          if (-not $candidates) { Write-Error "No setalink.exe found anywhere under windows/"; exit 1 }
+          $candidates | ForEach-Object { Write-Host " - $($_.FullName)" }
+
+          $exe = $candidates | Where-Object { $_.FullName -notmatch '\\AppX\\' } | Select-Object -First 1
+          if (-not $exe) { Write-Error "Only found setalink.exe inside an AppX layout, no loose Release exe"; exit 1 }
+          Write-Host "Using loose Release exe: $($exe.FullName)"
 
           $deps = Get-ChildItem -Path AppPackages -Recurse -Directory -Filter "Dependencies" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $deps) { Write-Error "No Dependencies folder found under windows/AppPackages"; exit 1 }
-          Write-Host "Found dependencies: $($deps.FullName)"
+          if ($deps) {
+            Write-Host "Found AppPackages Dependencies folder: $($deps.FullName)"
+          } else {
+            Write-Host "No AppPackages/Dependencies folder -- expected for this unpackaged (AppContainerApplication=false) build, not a failure. 'Stage installer inputs' falls back to locating runtime DLLs directly."
+          }
 
       # Replaces the old "zip of a loose exe + a Dependencies folder the user
       # had to manually double-click through" with ONE installer exe:
@@ -253,9 +271,14 @@ jobs:
           # and "first match wins" only happens to skip it because of
           # enumeration order — if that ever flipped we'd ship AppxManifest.xml
           # and resources.pri as if they were plain app files.
-          $outDir = (Get-ChildItem -Recurse -Filter "setalink.exe" |
+          Write-Host "All setalink.exe candidates found under windows/:"
+          $exeCandidates = Get-ChildItem -Recurse -Filter "setalink.exe" -ErrorAction SilentlyContinue
+          $exeCandidates | ForEach-Object { Write-Host " - $($_.FullName)" }
+
+          $outDir = ($exeCandidates |
             Where-Object { $_.FullName -notmatch '\\AppX\\' } |
             Select-Object -First 1).DirectoryName
+          if (-not $outDir) { Write-Error "No loose Release setalink.exe found (only an AppX copy, or none at all)"; exit 1 }
           Write-Host "Staging app files from: $outDir"
           Copy-Item -Path "$outDir\*" -Destination "$stage\AppFiles" -Recurse -Force
 
@@ -283,22 +306,60 @@ jobs:
           New-Item -ItemType Directory -Path "$stage\AppFiles\Bundle" -Force | Out-Null
           Copy-Item -Path "$bundleDir\*" -Destination "$stage\AppFiles\Bundle" -Recurse -Force
 
-          $depsDir = (Get-ChildItem -Path AppPackages -Recurse -Directory -Filter "Dependencies" | Select-Object -First 1).FullName
+          # Runtime DLLs (VCLibs _APP forwarders + WinUI/Xaml). A packaged
+          # (AppContainerApplication=true) build gets these by extracting them
+          # from windows/AppPackages/*/Dependencies/*.appx — see the long
+          # comment above this step for why. This unpackaged test build
+          # (AppContainerApplication=false) produces no AppPackages output at
+          # all, so that folder legitimately won't exist here — that alone is
+          # not a reason to fail. Use the appx extraction when Dependencies is
+          # present; otherwise search the rest of the build tree for the same
+          # DLLs (a non-AppContainer target may binplace plain, non-_APP CRT
+          # DLLs directly next to setalink.exe instead) and warn rather than
+          # hard-fail on whatever is still missing — Khabat's physical test of
+          # the resulting installer is what actually verifies this, not CI.
+          $depsDir = (Get-ChildItem -Path AppPackages -Recurse -Directory -Filter "Dependencies" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
           Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-          # The plain (non-Desktop) VCLibs appx — has the _app-suffixed DLLs.
-          $vclibsZip = [System.IO.Compression.ZipFile]::OpenRead("$depsDir\x64\Microsoft.VCLibs.x64.14.00.appx")
-          foreach ($entry in $vclibsZip.Entries | Where-Object { $_.Name -like "*.dll" }) {
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "$stage\AppFiles\$($entry.Name)", $true)
-          }
-          $vclibsZip.Dispose()
+          if ($depsDir) {
+            Write-Host "Found AppPackages Dependencies folder: $depsDir"
 
-          # WinUI/Xaml — single DLL at the archive root.
-          $xamlZip = [System.IO.Compression.ZipFile]::OpenRead("$depsDir\x64\Microsoft.UI.Xaml.2.8.appx")
-          foreach ($entry in $xamlZip.Entries | Where-Object { $_.Name -like "*.dll" }) {
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "$stage\AppFiles\$($entry.Name)", $true)
+            # The plain (non-Desktop) VCLibs appx — has the _app-suffixed DLLs.
+            $vclibsZip = [System.IO.Compression.ZipFile]::OpenRead("$depsDir\x64\Microsoft.VCLibs.x64.14.00.appx")
+            foreach ($entry in $vclibsZip.Entries | Where-Object { $_.Name -like "*.dll" }) {
+              [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "$stage\AppFiles\$($entry.Name)", $true)
+            }
+            $vclibsZip.Dispose()
+
+            # WinUI/Xaml — single DLL at the archive root.
+            $xamlZip = [System.IO.Compression.ZipFile]::OpenRead("$depsDir\x64\Microsoft.UI.Xaml.2.8.appx")
+            foreach ($entry in $xamlZip.Entries | Where-Object { $_.Name -like "*.dll" }) {
+              [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "$stage\AppFiles\$($entry.Name)", $true)
+            }
+            $xamlZip.Dispose()
+          } else {
+            Write-Host "No AppPackages/Dependencies folder -- expected for this unpackaged (AppContainerApplication=false) build. Searching the rest of the build tree for the same runtime DLLs instead..."
+            $neededDlls = @(
+              "VCRUNTIME140_1_APP.DLL", "VCRUNTIME140_APP.DLL", "MSVCP140_APP.DLL",
+              "VCRUNTIME140_1.dll", "VCRUNTIME140.dll", "MSVCP140.dll",
+              "Microsoft.ui.xaml.dll"
+            )
+            $stillMissing = @()
+            foreach ($name in $neededDlls) {
+              if (Test-Path "$stage\AppFiles\$name") { continue }
+              $hit = Get-ChildItem -Recurse -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($hit) {
+                Write-Host " - found $name at $($hit.FullName)"
+                Copy-Item $hit.FullName "$stage\AppFiles\$name" -Force
+              } else {
+                $stillMissing += $name
+              }
+            }
+            if ($stillMissing) {
+              Write-Warning "Could not locate these runtime DLLs anywhere in the build tree: $($stillMissing -join ', ')"
+              Write-Warning "Staging the installer anyway -- the app may fail to launch until these are sourced; that failure mode (and which DLL) will show up clearly in Khabat's physical test."
+            }
           }
-          $xamlZip.Dispose()
 
           # WebView2 Evergreen bootstrapper (~2 MB, signed by Microsoft). The
           # app's WebView screens (ShahnamehEmbed, TrustAiLinkScreen) need the
