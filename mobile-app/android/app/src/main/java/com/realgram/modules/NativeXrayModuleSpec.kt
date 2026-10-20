@@ -1,0 +1,27 @@
+package com.realgram.modules
+
+import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+
+abstract class NativeXrayModuleSpec(context: ReactApplicationContext) :
+    ReactContextBaseJavaModule(context) {
+
+    abstract fun start(config: String, promise: Promise)
+    abstract fun startEmergency(config: String, promise: Promise)
+    abstract fun stop(promise: Promise)
+    abstract fun isRunning(promise: Promise)
+    abstract fun getStats(promise: Promise)
+    abstract fun getInstalledApps(promise: Promise)
+    abstract fun setBypassApps(packagesJson: String, promise: Promise)
+    abstract fun validateConfig(config: String, promise: Promise)
+    abstract fun getLastError(promise: Promise)
+    abstract fun getLastProbeResult(promise: Promise)
+    abstract fun getConnectionLog(promise: Promise)
+    abstract fun getXrayLog(promise: Promise)
+    abstract fun getTun2socksLog(promise: Promise)
+    abstract fun getGeneratedConfig(promise: Promise)
+    abstract fun getDeviceInfo(promise: Promise)
+    abstract fun reportTelemetry(payload: String, promise: Promise)
+    abstract fun runTraceTest(promise: Promise)
+}

@@ -1,0 +1,218 @@
+name: Release APK
+
+# Release builds are intentional: trigger manually (Actions ▸ Run workflow) or by
+# pushing a version tag. They are NOT run on every push (android-debug.yml covers
+# per-push validation). Signing uses the production key via repo Secrets so the
+# artifacts install as an OTA update over the previous release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-release:
+    name: Build release APKs
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      # ── Source ──────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Toolchain (mirrors android-debug.yml, which is proven to build) ───────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install NDK and CMake
+        run: sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      # ── JS dependencies ─────────────────────────────────────────────────────
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: mobile-app/node_modules
+          key: node-modules-${{ hashFiles('mobile-app/package.json') }}
+          restore-keys: node-modules-
+
+      - name: Install JS dependencies
+        working-directory: mobile-app
+        run: npm install
+
+      - name: Test VPN recovery and Live TV
+        working-directory: mobile-app
+        run: npm test -- --runInBand src/__tests__/vpnStoreRecovery.test.ts src/__tests__/connectionMachine.test.ts src/__tests__/useVpnStatsTrafficStall.test.tsx src/__tests__/liveTvService.test.ts src/__tests__/liveTvPlayer.test.tsx
+
+      # ── Android build setup ─────────────────────────────────────────────────
+      - name: Download Gradle wrapper jar
+        working-directory: mobile-app/android
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o gradle/wrapper/gradle-wrapper.jar
+          chmod +x gradlew
+
+      - name: Preserve Android update identity from the verified installed release
+        run: |
+          curl --fail --location --silent --show-error https://realgram.no/download/RealGram-0.9.149.apk -o "$RUNNER_TEMP/RealGram-installed.apk"
+          echo "2abb5698098e3e243f9ad2acd6e92fad6bd7f35ad1f3d5da0d954fec74ec0a09  $RUNNER_TEMP/RealGram-installed.apk" | sha256sum --check
+          package_id=$("$ANDROID_SDK_ROOT/build-tools/34.0.0/aapt" dump badging "$RUNNER_TEMP/RealGram-installed.apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          test -n "$package_id"
+          echo "::add-mask::$package_id"
+          echo "REALGRAM_ANDROID_APPLICATION_ID=$package_id" >> "$GITHUB_ENV"
+
+      - name: Configure required Firebase incoming-call push
+        env:
+          REALGRAM_GOOGLE_SERVICES_JSON: ${{ secrets.REALGRAM_GOOGLE_SERVICES_JSON }}
+        run: |
+          python3 - <<'PYCONFIG'
+          import os, json, pathlib
+          raw = os.environ.get('REALGRAM_GOOGLE_SERVICES_JSON', '')
+          if not raw:
+              raise SystemExit('::error::Firebase client configuration is REQUIRED for Android calling release')
+          config = json.loads(raw)
+          expected = os.environ.get('REALGRAM_ANDROID_APPLICATION_ID', '')
+          clients = config.get('client', [])
+          matched = [c for c in clients if c.get('client_info', {}).get('android_client_info', {}).get('package_name') == expected]
+          if not expected or not matched:
+              raise SystemExit('::error::Firebase Android package must exactly match the installed release identity')
+          if not config.get('project_info', {}).get('project_id'):
+              raise SystemExit('::error::Missing Firebase project ID')
+          pathlib.Path('mobile-app/android/app/google-services.json').write_text(raw)
+          print('Firebase Android client matched release identity; no credentials printed')
+          PYCONFIG
+
+      - name: Require background-calling production readiness
+        env:
+          REALGRAM_BACKGROUND_CALL_E2E_VERIFIED: ${{ secrets.REALGRAM_BACKGROUND_CALL_E2E_VERIFIED }}
+        run: |
+          # Signed releases must not ship until real FCM pushes and
+          # lock-screen accept/decline work on two physical Android phones.
+          if [ "$REALGRAM_BACKGROUND_CALL_E2E_VERIFIED" != "yes" ]; then
+            echo "::error::Background calling needs verified two-phone FCM/relay tests before any release APK"
+            exit 1
+          fi
+          python3 scripts/check-realgram-calling-backend.py
+
+      - name: Prepare verified native executables
+        run: python3 scripts/prepare-android-native.py
+
+      - name: Generate local.properties
+        working-directory: mobile-app/android
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
+      # ── Release signing (production key from repo Secrets) ────────────────────
+      - name: Verify signing secrets are present
+        env:
+          KS: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          SP: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KP: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=
+          [ -z "$KS" ] && missing="$missing RELEASE_KEYSTORE_BASE64"
+          [ -z "$SP" ] && missing="$missing RELEASE_STORE_PASSWORD"
+          [ -z "$KP" ] && missing="$missing RELEASE_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repo secret(s):$missing"
+            exit 1
+          fi
+
+      - name: Decode release keystore
+        working-directory: mobile-app/android/app
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
+      - name: Write keystore.properties
+        working-directory: mobile-app/android
+        run: |
+          {
+            echo "storeFile=release.keystore"
+            echo "storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}"
+            echo "keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}"
+            echo "keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}"
+          } > keystore.properties
+
+      # ── Build ────────────────────────────────────────────────────────────────
+      - name: Build release APKs
+        working-directory: mobile-app/android
+        run: ./gradlew testReleaseUnitTest assembleRelease --stacktrace
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.1.10909125
+
+      # ── Artifacts ─────────────────────────────────────────────────────────────
+      # ABI splits (arm64-v8a, armeabi-v7a) + universalApk → three signed APKs.
+      - name: List built APKs
+        working-directory: mobile-app/android/app/build/outputs/apk/release
+        run: ls -lh *.apk
+
+      - name: Upload release APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: realgram-release-${{ github.run_number }}
+          path: |
+            mobile-app/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+            mobile-app/android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+            mobile-app/android/app/build/outputs/apk/release/app-universal-release.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Print APK sizes
+        working-directory: mobile-app/android/app/build/outputs/apk/release
+        run: du -sh *.apk
+
+      - name: Confirm website publishing access
+        env:
+          REALGRAM_DEPLOY_HOST: ${{ secrets.REALGRAM_DEPLOY_HOST }}
+          REALGRAM_DEPLOY_USER: ${{ secrets.REALGRAM_DEPLOY_USER }}
+          REALGRAM_DEPLOY_WEBROOT: ${{ secrets.REALGRAM_DEPLOY_WEBROOT }}
+          REALGRAM_DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.REALGRAM_DEPLOY_SSH_PRIVATE_KEY }}
+          REALGRAM_DEPLOY_KNOWN_HOSTS: ${{ secrets.REALGRAM_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in REALGRAM_DEPLOY_HOST REALGRAM_DEPLOY_USER REALGRAM_DEPLOY_WEBROOT REALGRAM_DEPLOY_SSH_PRIVATE_KEY REALGRAM_DEPLOY_KNOWN_HOSTS; do
+            if [ -z "$(printenv "$name")" ]; then
+              echo "::error::Missing $name; cannot publish direct APK on realgram.no"
+              exit 1
+            fi
+          done
+
+      - name: Publish verified Android downloads
+        run: bash scripts/publish-android.sh mobile-app/android/app/build/outputs/apk/release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANDROID_BUILD_TOOLS: ${{ env.ANDROID_SDK_ROOT }}/build-tools/34.0.0
+
+      - name: Update realgram.no Android APK and version
+        run: bash scripts/deploy-android-website.sh mobile-app/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+        env:
+          REALGRAM_DEPLOY_HOST: ${{ secrets.REALGRAM_DEPLOY_HOST }}
+          REALGRAM_DEPLOY_USER: ${{ secrets.REALGRAM_DEPLOY_USER }}
+          REALGRAM_DEPLOY_WEBROOT: ${{ secrets.REALGRAM_DEPLOY_WEBROOT }}
+          REALGRAM_DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.REALGRAM_DEPLOY_SSH_PRIVATE_KEY }}
+          REALGRAM_DEPLOY_KNOWN_HOSTS: ${{ secrets.REALGRAM_DEPLOY_KNOWN_HOSTS }}
+
+      # Always remove the decoded signing material from the runner workspace.
+      - name: Clean up signing material
+        if: always()
+        working-directory: mobile-app/android
+        run: rm -f app/release.keystore keystore.properties

@@ -35,7 +35,7 @@ without becoming three different identities:
 ## What's unresolved — decisions to make, not default
 
 - **One mark, or a family?** RealGram unifies four parts (Shahnameh, REAL,
-  Realink, TrustAI) under one identity. Does the visual system say that
+  Realgram, TrustAI) under one identity. Does the visual system say that
   with one unified mark and internal iconography per part, or does each
   part keep enough of its own visual identity to be recognizable on its
   own (Shahnameh's Persian-epic register is a real asset, not just legacy)?

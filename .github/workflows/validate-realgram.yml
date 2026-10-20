@@ -1,0 +1,38 @@
+name: Validate Realgram
+on:
+  push:
+    branches: [main, 'feat/realgram-*']
+  pull_request:
+  workflow_dispatch:
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, sodium
+      - name: Check canonical naming
+        run: python3 scripts/check-realgram-naming.py
+      - name: Install app dependencies
+        working-directory: mobile-app
+        run: npm install
+      - name: Check TypeScript
+        working-directory: mobile-app
+        run: npm run type-check
+      - name: Test app
+        working-directory: mobile-app
+        run: npm test -- --runInBand
+      - name: Test calling relay
+        working-directory: services/calling-relay
+        run: npm test
+      - name: Test backend
+        run: |
+          mkdir -p backend/data
+          php backend/scripts/test-calling.php
+          php backend/scripts/test-messaging.php
+          php backend/scripts/test-reliable-delivery.php

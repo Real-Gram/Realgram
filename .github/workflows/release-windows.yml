@@ -1,53 +1,10 @@
 name: Release Windows (RealGram desktop, VPN — untested, not yet the public download)
 
-# Manual only — never on push. Same standing rule as SetaLink's
-# release-apk.yml/ios-testflight.yml: no build/publish without an explicit
-# go per run.
-#
-# MIGRATED HERE 2026-09-04 from XS227/SetaLink (branch fix/windows-createfile2,
-# the last branch to produce a working installer — realgram-windows-setup-19,
-# 2026-09-03). Deliberately a HYBRID, not a full extraction:
-#   - Windows-specific native code (this repo's mobile-app/windows/: the RNW
-#     app project, the VPN service, the Inno Setup installer) now lives HERE,
-#     in Real-Gram/Realgram — the canonical repo per the 31/8 migration
-#     decision (see docs/realgram/TASK_SPLIT.md).
-#   - The shared JS/React Native tree (mobile-app/ minus windows/) still
-#     lives in XS227/SetaLink — that's the same monorepo Android/iOS build
-#     from, and hasn't been migrated. Moving it too would drag the Android
-#     (release-apk.yml) and iOS (ios-testflight.yml) pipelines along with it,
-#     which wasn't part of this move.
-#
-# Consequence: this workflow checks out TWO repos and merges them at build
-# time (see "Merge JS tree with this repo's Windows sources" below). It is
-# NOT self-contained — a `git clone` of just this repo cannot build the app.
-#
-# SETALINK_REF below pins which SetaLink branch supplies the JS tree.
-# main is NOT usable (stale, version 0.9.50, missing react-native-windows
-# and several other deps this build needs — confirmed by diff 2026-09-04).
-# fix/windows-createfile2 (0.9.147) is the newest branch confirmed to have a
-# working package.json for this build. Bump via workflow_dispatch input, not
-# a code edit, when SetaLink's active line moves.
-#
-# This produces a single installer exe (RealGram-Setup.exe, built with Inno
-# Setup from mobile-app/windows/installer/RealGram.iss): download, double-
-# click, Next/Next/Finish, app launches — no manually opening a Dependencies
-# folder first. It is still NOT an MSIX/code-signed installer (see the .iss
-# file's header for why that path was dropped) — Windows still shows one
-# generic "unknown publisher" SmartScreen prompt on first run, same as any
-# unsigned installer. See mobile-app/react-native.config.js (in SetaLink) for
-# which native modules (calling, ads, live TV) are intentionally excluded on
-# this platform — none of them have a Windows implementation.
-#
-# GitHub-hosted windows-2022 runner: react-native-windows compiles via
-# MSBuild against the Windows SDK/WinAppSDK, which only exists on a real
-# Windows toolchain — nothing else in this repo needs that.
+# Realgram is self-contained: app, native projects and build workflows
+# are checked out from this repository. Builds are manually triggered.
+
 on:
   workflow_dispatch:
-    inputs:
-      setalink_ref:
-        description: 'Branch/tag/SHA in XS227/SetaLink to pull the JS/mobile-app tree from'
-        required: true
-        default: 'fix/windows-createfile2'
 
 jobs:
   build-release:
@@ -65,33 +22,10 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Checkout this repo (Windows sources)
+      - name: Checkout Realgram
         uses: actions/checkout@v4
         with:
           path: realgram
-          sparse-checkout: |
-            mobile-app/windows
-          sparse-checkout-cone-mode: false
-
-      - name: Checkout SetaLink (shared JS/mobile-app tree)
-        uses: actions/checkout@v4
-        with:
-          repository: XS227/SetaLink
-          ref: ${{ inputs.setalink_ref }}
-          path: setalink
-
-      # From here on, "mobile-app" means setalink/mobile-app — the merged
-      # tree — not the (nonexistent, sparse-checked-out-partial) one under
-      # realgram/. Every working-directory below is prefixed accordingly.
-      - name: Merge JS tree with this repo's Windows sources
-        shell: pwsh
-        run: |
-          Write-Host "Removing SetaLink's own mobile-app/windows (superseded by this repo's copy)..."
-          Remove-Item -Recurse -Force "setalink\mobile-app\windows" -ErrorAction SilentlyContinue
-          Write-Host "Copying realgram/mobile-app/windows into setalink/mobile-app/windows..."
-          Copy-Item -Path "realgram\mobile-app\windows" -Destination "setalink\mobile-app\windows" -Recurse
-          Write-Host "Merged tree, mobile-app/windows contents:"
-          Get-ChildItem "setalink\mobile-app\windows"
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -101,12 +35,12 @@ jobs:
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
-          path: setalink/mobile-app/node_modules
-          key: node-modules-windows-${{ hashFiles('setalink/mobile-app/package.json') }}
+          path: realgram/mobile-app/node_modules
+          key: node-modules-windows-${{ hashFiles('realgram/mobile-app/package.json') }}
           restore-keys: node-modules-windows-
 
       - name: Install JS dependencies
-        working-directory: setalink/mobile-app
+        working-directory: realgram/mobile-app
         run: npm install
 
       # windows-latest ships Visual Studio 2022 Enterprise, but not the C++
@@ -117,7 +51,7 @@ jobs:
       # components like UWP.VC that a real dev machine needs but a headless
       # build doesn't — see the script's own comment on that flag).
       - name: Install RNW build dependencies (VS C++/UWP workloads)
-        working-directory: setalink/mobile-app
+        working-directory: realgram/mobile-app
         shell: pwsh
         run: .\node_modules\react-native-windows\Scripts\rnw-dependencies.ps1 -Install -NoPrompt buildLab
 
@@ -127,15 +61,15 @@ jobs:
       # minutes into the actual compile and failed on a packages.config
       # NuGet package (Microsoft.Windows.CppWinRT) missing.
       - name: Restore NuGet packages (solution — modern PackageReference projects)
-        working-directory: setalink/mobile-app/windows
-        run: nuget restore setalink.sln
+        working-directory: realgram/mobile-app/windows
+        run: nuget restore realgram.sln
 
-      # setalink.sln only lists the app itself + react-native-windows's own
+      # realgram.sln only lists the app itself + react-native-windows's own
       # core projects (Folly/Common/ReactCommon/Microsoft.ReactNative) — the
       # solution-level restore above only walks THOSE. Autolinked native
       # modules that ship their own Windows implementation (react-native-
       # screens, in this build) are pulled in via a <ProjectReference> from
-      # AutolinkedNativeModules.g.targets straight into setalink.vcxproj,
+      # AutolinkedNativeModules.g.targets straight into realgram.vcxproj,
       # bypassing the .sln entirely — MSBuild still builds them (which is
       # why the compile error surfaced inside RNScreens.vcxproj at all), but
       # `nuget restore <sln>` never reaches their own (older, packages.config
@@ -143,7 +77,7 @@ jobs:
       # directly, into the same windows/packages/ folder their .vcxproj
       # HintPaths expect (confirmed from the earlier error's file path).
       - name: Restore NuGet packages (autolinked native modules' packages.config)
-        working-directory: setalink/mobile-app
+        working-directory: realgram/mobile-app
         shell: pwsh
         run: |
           Get-ChildItem -Path node_modules -Recurse -Filter packages.config -ErrorAction SilentlyContinue |
@@ -159,12 +93,12 @@ jobs:
       # skips starting a Metro dev server, which a --release build bundles
       # past anyway.
       - name: Build Windows app (Release, x64)
-        working-directory: setalink/mobile-app
+        working-directory: realgram/mobile-app
         run: npx react-native run-windows --release --arch x64 --no-launch --no-deploy --no-packager --logging
 
       # The Release build produces two things, confirmed from run #5's log:
-      #   1. A loose exe: windows/x64/Release/setalink/setalink.exe (+ DLLs)
-      #   2. windows/AppPackages/setalink/setalink_<version>_x64_Test/ — a
+      #   1. A loose exe: windows/x64/Release/realgram/realgram.exe (+ DLLs)
+      #   2. windows/AppPackages/realgram/realgram_<version>_x64_Test/ — a
       #      real sideloadable app package: the .msix itself, its
       #      Dependencies/ (VCLibs/WinUI runtime redistributables), and
       #      Add-AppDevPackage.ps1 — Microsoft's own standard "install this
@@ -196,28 +130,28 @@ jobs:
       # Add-AppDevPackage.ps1). Those redistributable .appx files are
       # signed by Microsoft directly, not by our test cert, so installing
       # them doesn't hit the "publisher could not be verified" prompt —
-      # one-time double-click install, then setalink.exe just runs.
-      # 2026-09-09: AppContainerApplication is now false in setalink.vcxproj
+      # one-time double-click install, then realgram.exe just runs.
+      # 2026-09-09: AppContainerApplication is now false in realgram.vcxproj
       # (unpackaged desktop-launch test). Confirmed on a real CI run
-      # (XS227/SetaLink fix/windows-unpackaged-launch, run 33820801742) that
+      # (Real-Gram/Realgram fix/windows-unpackaged-launch, run 33820801742) that
       # this still produces the loose Release exe at
-      # windows/x64/Release/setalink/setalink.exe exactly as before, but
+      # windows/x64/Release/realgram/realgram.exe exactly as before, but
       # produces NO AppPackages/MSIX output at all — packaging simply doesn't
       # happen for a non-AppContainer app. That run's hard requirement for an
       # AppPackages/Dependencies folder is exactly what failed it. Treat that
       # folder as optional here, not required — "Stage installer inputs"
       # below has its own fallback for the runtime DLLs it used to hold.
       - name: Locate build output
-        working-directory: setalink/mobile-app/windows
+        working-directory: realgram/mobile-app/windows
         shell: pwsh
         run: |
-          Write-Host "All setalink.exe candidates found under windows/:"
-          $candidates = Get-ChildItem -Recurse -Filter "setalink.exe" -ErrorAction SilentlyContinue
-          if (-not $candidates) { Write-Error "No setalink.exe found anywhere under windows/"; exit 1 }
+          Write-Host "All realgram.exe candidates found under windows/:"
+          $candidates = Get-ChildItem -Recurse -Filter "realgram.exe" -ErrorAction SilentlyContinue
+          if (-not $candidates) { Write-Error "No realgram.exe found anywhere under windows/"; exit 1 }
           $candidates | ForEach-Object { Write-Host " - $($_.FullName)" }
 
           $exe = $candidates | Where-Object { $_.FullName -notmatch '\\AppX\\' } | Select-Object -First 1
-          if (-not $exe) { Write-Error "Only found setalink.exe inside an AppX layout, no loose Release exe"; exit 1 }
+          if (-not $exe) { Write-Error "Only found realgram.exe inside an AppX layout, no loose Release exe"; exit 1 }
           Write-Host "Using loose Release exe: $($exe.FullName)"
 
           $deps = Get-ChildItem -Path AppPackages -Recurse -Directory -Filter "Dependencies" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -255,42 +189,42 @@ jobs:
       #
       # Fix: skip AppX entirely. Extract the actual DLLs (from the plain
       # VCLibs appx and the WinUI Xaml appx) straight into AppFiles, right
-      # next to setalink.exe, as plain files. Normal Windows DLL search
+      # next to realgram.exe, as plain files. Normal Windows DLL search
       # order finds them with zero install step, no elevation, no AppX
       # deployment service, no OS-version dependency — works identically on
       # a fresh Windows 11 box and a three-year-unpatched Windows 10 one.
       - name: Stage installer inputs
-        working-directory: setalink/mobile-app/windows
+        working-directory: realgram/mobile-app/windows
         shell: pwsh
         run: |
           $stage = "installer\build"
           New-Item -ItemType Directory -Path "$stage\AppFiles" -Force | Out-Null
 
           # Pin this to the loose Release dir. MSBuild also drops a copy of
-          # setalink.exe inside the .msix layout (x64\Release\setalink\AppX\),
+          # realgram.exe inside the .msix layout (x64\Release\realgram\AppX\),
           # and "first match wins" only happens to skip it because of
           # enumeration order — if that ever flipped we'd ship AppxManifest.xml
           # and resources.pri as if they were plain app files.
-          Write-Host "All setalink.exe candidates found under windows/:"
-          $exeCandidates = Get-ChildItem -Recurse -Filter "setalink.exe" -ErrorAction SilentlyContinue
+          Write-Host "All realgram.exe candidates found under windows/:"
+          $exeCandidates = Get-ChildItem -Recurse -Filter "realgram.exe" -ErrorAction SilentlyContinue
           $exeCandidates | ForEach-Object { Write-Host " - $($_.FullName)" }
 
           $outDir = ($exeCandidates |
             Where-Object { $_.FullName -notmatch '\\AppX\\' } |
             Select-Object -First 1).DirectoryName
-          if (-not $outDir) { Write-Error "No loose Release setalink.exe found (only an AppX copy, or none at all)"; exit 1 }
+          if (-not $outDir) { Write-Error "No loose Release realgram.exe found (only an AppX copy, or none at all)"; exit 1 }
           Write-Host "Staging app files from: $outDir"
           Copy-Item -Path "$outDir\*" -Destination "$stage\AppFiles" -Recurse -Force
 
           # 2026-08-24, after Khabat's second field test ("appen kan ikke lastes,
           # ingenting skjer" — a window flashing up for a frame, then gone): the
           # installed app never had any JavaScript in it. MakeBundle writes the
-          # Hermes bundle to windows\setalink\Bundle\, and Bundle.Cpp.targets
+          # Hermes bundle to windows\realgram\Bundle\, and Bundle.Cpp.targets
           # then adds it as <None DeploymentContent="true"> — which is an APPX
           # *packaging* concept. It lands in the .msix layout under
-          # windows\AppPackages\, and never in windows\x64\Release\setalink\,
+          # windows\AppPackages\, and never in windows\x64\Release\realgram\,
           # the loose exe dir $outDir points at. So every loose-exe build we've
-          # shipped (#8 onward) installed setalink.exe + its DLLs with no
+          # shipped (#8 onward) installed realgram.exe + its DLLs with no
           # index.windows.bundle anywhere on disk. The DLL fix below made the
           # process start; this is why it still died immediately afterwards.
           #
@@ -299,7 +233,7 @@ jobs:
           # the app's images/fonts into the same folder, so this carries those
           # too. Hard-fail if it's missing rather than shipping another silently
           # JS-less installer.
-          $bundleDir = "setalink\Bundle"
+          $bundleDir = "realgram\Bundle"
           if (-not (Test-Path "$bundleDir\index.windows.bundle")) {
             Write-Error "No index.windows.bundle in $bundleDir — MakeBundle did not run"; exit 1
           }
@@ -315,7 +249,7 @@ jobs:
           # not a reason to fail. Use the appx extraction when Dependencies is
           # present; otherwise search the rest of the build tree for the same
           # DLLs (a non-AppContainer target may binplace plain, non-_APP CRT
-          # DLLs directly next to setalink.exe instead) and warn rather than
+          # DLLs directly next to realgram.exe instead) and warn rather than
           # hard-fail on whatever is still missing — Khabat's physical test of
           # the resulting installer is what actually verifies this, not CI.
           $depsDir = (Get-ChildItem -Path AppPackages -Recurse -Directory -Filter "Dependencies" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
@@ -388,9 +322,9 @@ jobs:
       # vpn-service/ for why: creating a TUN adapter and changing the default
       # route needs Administrator rights this unelevated app process
       # shouldn't run with). Independent of the RNW app build above — plain
-      # Win32, not part of setalink.sln — so it's staged in its own steps.
+      # Win32, not part of realgram.sln — so it's staged in its own steps.
       - name: Stage VPN binaries (xray-core, tun2socks, wintun)
-        working-directory: setalink/mobile-app/windows
+        working-directory: realgram/mobile-app/windows
         shell: pwsh
         run: |
           $vpnDir = "installer\build\VpnFiles"
@@ -401,7 +335,7 @@ jobs:
           # (VLESS+REALITY client); no version pin, unlike tun2socks below —
           # this app's config only uses the stable vnext/REALITY outbound
           # shape, and always fetching current satisfies Rule 1 in
-          # docs/CLAUDE_REALINK_RULES.md ("check Xray-core changes before
+          # docs/CLAUDE_REALGRAM_RULES.md ("check Xray-core changes before
           # every network release") by construction.
           $xrayRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/XTLS/Xray-core/releases/latest"
           $xrayAsset = $xrayRelease.assets | Where-Object { $_.name -eq "Xray-windows-64.zip" } | Select-Object -First 1
@@ -441,11 +375,11 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build RealGram VPN service (Release, x64)
-        working-directory: setalink/mobile-app/windows
+        working-directory: realgram/mobile-app/windows
         run: msbuild vpn-service\RealGramVpnService.vcxproj /p:Configuration=Release /p:Platform=x64 /m
 
       - name: Stage VPN service binary
-        working-directory: setalink/mobile-app/windows
+        working-directory: realgram/mobile-app/windows
         shell: pwsh
         run: |
           $svcExe = Get-ChildItem -Recurse -Path vpn-service -Filter "RealGramVpnService.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -455,7 +389,7 @@ jobs:
           Get-ChildItem "installer\build\VpnFiles" | Select-Object Name, Length
 
       - name: Compile installer (Inno Setup)
-        working-directory: setalink/mobile-app/windows/installer
+        working-directory: realgram/mobile-app/windows/installer
         shell: pwsh
         run: |
           $version = (Get-Content ..\..\package.json | ConvertFrom-Json).version
@@ -473,6 +407,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: realgram-windows-setup-${{ github.run_number }}
-          path: setalink/mobile-app/windows/installer/Output/RealGram-Setup.exe
+          path: realgram/mobile-app/windows/installer/Output/RealGram-Setup.exe
           retention-days: 30
           if-no-files-found: error

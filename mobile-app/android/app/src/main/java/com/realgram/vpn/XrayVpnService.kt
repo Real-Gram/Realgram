@@ -1,0 +1,1811 @@
+package com.realgram.vpn
+
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.VpnService
+import android.os.Build
+import android.os.IBinder
+import android.os.ParcelFileDescriptor
+import android.util.Log
+import com.api.realgram.notification.NotificationHelper
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.File
+import java.io.FileWriter
+import java.io.RandomAccessFile
+import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.NetworkInterface
+import java.net.Proxy
+import java.net.Socket
+import java.net.URL
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+import org.json.JSONObject
+
+class XrayVpnService : VpnService() {
+
+    companion object {
+        private const val TAG = "XrayVpnService"
+
+        const val ACTION_START = "com.realgram.vpn.START"
+        const val ACTION_STOP  = "com.realgram.vpn.STOP"
+        const val EXTRA_CONFIG         = "config_json"
+        // Smart Mode per-app bypass: written by XrayModule.setBypassApps,
+        // read here when the TUN is built (changes apply on next connect).
+        const val PREFS_NAME       = "realgram_vpn_prefs"
+        const val PREF_BYPASS_APPS = "bypass_apps_json"
+        const val PREF_BYPASS_RESULT = "bypass_apply_result_json"  // per-package OK/FAIL summary
+        const val EXTRA_EMERGENCY_MODE = "emergency_mode"
+
+        const val BROADCAST_CONNECTED     = "com.realgram.vpn.CONNECTED"
+        const val BROADCAST_DISCONNECTED  = "com.realgram.vpn.DISCONNECTED"
+        const val BROADCAST_STEP          = "com.realgram.vpn.STEP"
+        const val BROADCAST_ROUTING_FAIL  = "com.realgram.vpn.ROUTING_FAIL"
+        const val EXTRA_ERROR            = "error_message"
+        const val EXTRA_STEP             = "step_name"
+        const val EXTRA_STEP_OK          = "step_ok"
+        const val EXTRA_STEP_MSG         = "step_msg"
+        const val BROADCAST_METRICS        = "com.realgram.vpn.METRICS"
+        const val BROADCAST_TRAFFIC_STALL = "com.realgram.vpn.TRAFFIC_STALL"
+
+        // Failure categories sent in BROADCAST_DISCONNECTED extra "failure_category"
+        const val FAIL_REALITY_CLIENTHELLO = "reality_clienthello_failed"
+        const val FAIL_WS_UPGRADE          = "ws_upgrade_failed"
+        const val FAIL_XHTTP_PATH_MISMATCH = "xhttp_path_mismatch"
+        const val FAIL_SOCKS_PROBE_TIMEOUT = "socks_probe_timeout"
+        const val FAIL_DNS_FAILED          = "dns_failed"
+        const val FAIL_NO_INTERNET         = "no_internet_routed"
+
+        const val XRAY_LOG_FILE     = "xray.log"
+        const val TUN2SOCKS_LOG_FILE = "tun2socks.log"
+
+        // go-tun2socks v2 valid log levels: debug | info | warn | error | silent
+        private const val TUN2SOCKS_LOG_LEVEL = "info"
+
+        // Metrics polling interval
+        private const val METRICS_INTERVAL_MS = 3_000L
+
+        // Post-connect internet-routing recheck. runBackgroundValidation() only ever
+        // ran ONCE, ~1-2s after connect — v0.9.145 (see docs/realgram/TASK_SPLIT.md
+        // A→B(345)) shipped a JS-side 20s poll of getLastProbeResult() assuming native
+        // kept re-validating in the background, but nothing did; the flag it read was
+        // frozen at that one-shot value for the rest of the session. This loop is the
+        // actual periodic re-probe. Real websites, not captive-check domains
+        // (connectivitycheck.gstatic.com / captive.apple.com) — some ISPs allow-list
+        // exactly those domains even while blocking everything else, which is how a
+        // "connected but no internet" session can pass runDeepValidation() yet still
+        // show a raw-ISP exit IP (see the sl-85ff1772 field report, 2026-08-31).
+        private const val PROBE_RECHECK_INTERVAL_MS    = 30_000L
+        private const val PROBE_RECHECK_FAIL_THRESHOLD = 2
+        private val PROBE_RECHECK_TARGETS = listOf("www.cloudflare.com", "example.com", "vg.no")
+
+        // PIDs of spawned processes survive here across service-instance
+        // recreation (HyperOS/MIUI kill the service object but the forked
+        // children live on holding the TUN fd — the reboot-only bug).
+        private const val PID_FILE = "vpn_pids.txt"
+
+        // Direct in-process handle for XrayModule.stop(). Intent delivery via
+        // startService(ACTION_STOP) is unreliable on HyperOS when the app is
+        // backgrounded; a direct method call cannot be deferred or dropped.
+        @Volatile private var activeInstance: XrayVpnService? = null
+
+        // Last measured diagnostics — exposed here so XrayModule can read them
+        // in a future iteration to pass to the JS layer via getStats().
+        @Volatile var lastRttMs:           Long    = -1L
+        @Volatile var lastIpVersion:       String  = "unknown"
+        @Volatile var lastNetworkSwitched: Boolean = false
+
+        /** Stops the tunnel via the live service instance. Returns false when
+         *  no instance exists (caller should fall back to the stop intent). */
+        fun requestStop(): Boolean {
+            val inst = activeInstance ?: return false
+            inst.desiredConfigJson = null
+            Thread { inst.tearDownTunnel("module-direct") }.start()
+            return true
+        }
+
+        init {
+            System.loadLibrary("realgram_vpn")
+        }
+    }
+
+    private external fun nativeClearCloexec(fd: Int): Int
+    // logFilePath: tun2socks stdout+stderr are redirected here for diagnostics.
+    private external fun nativeStartTun2socks(
+        binPath: String, tunFd: Int, proxy: String, logLevel: String, logFilePath: String
+    ): Int
+    private external fun nativeTun2socksExitCode(pid: Int): Int
+    private external fun nativeStopTun2socks(pid: Int)
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var tunFd:         ParcelFileDescriptor? = null
+    private var xrayProcess:   Process?              = null
+    private var tun2socksPid:  Int?                  = null
+    private var connectJob:    Job?                  = null
+    private var probeRecheckJob: Job?                = null
+    private var metricsJob: Job? = null
+    private var watchdogJob: Job? = null
+    private var tunnelLogJob: Job? = null
+    private var handoverJob: Job? = null
+    private val handoverMutex = Mutex()
+    private val handoverState = NetworkHandoverState()
+    @Volatile private var desiredConfigJson: String? = null
+    @Volatile private var desiredEmergencyMode = false
+    @Volatile private var networkMonitorRegistered = false
+    @Volatile private var upstreamNetwork: Network? = null
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            if (!networkMonitorRegistered) return
+            val token = handoverState.available(network.networkHandle)
+            if (!handoverState.accepts(network.networkHandle)) return
+            upstreamNetwork = network
+            runCatching { setUnderlyingNetworks(arrayOf(network)) }
+            if (token != null) scheduleNetworkRecovery(network, token)
+        }
+
+        override fun onLost(network: Network) {
+            if (!handoverState.lost(network.networkHandle)) return
+            upstreamNetwork = null
+            handoverJob?.cancel()
+            // Wait for a physical network to return instead of looping through servers offline.
+            runCatching { setUnderlyingNetworks(null) }
+        }
+    }
+    // REAL SSH (transport 'real_ssh') — non-null only when this session's
+    // SOCKS backend is the SSH bridge instead of Xray.
+    private var realSshTunnel: RealSshTunnel?         = null
+
+    // Set while tearDownTunnel runs — makes it idempotent and lets the
+    // metrics/watchdog loops bail out instead of re-triggering teardown.
+    private val tearingDown = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    // Network type recorded at connect start — used to detect WiFi↔Mobile switches.
+    private var connectNetworkType: String  = "unknown"
+    private var networkSwitched:    Boolean = false
+    // Server diagnostics measured during connection setup.
+    private var serverRttMs:     Long?   = null
+    private var serverIpVersion: String  = "unknown"
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    override fun onCreate() {
+        super.onCreate()
+        activeInstance = this
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Always enter foreground first: a stop request may arrive via
+        // startForegroundService() (HyperOS fallback path) and Android kills
+        // the app with ForegroundServiceDidNotStartInTimeException if we skip it.
+        val notification = NotificationHelper.buildConnected(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NotificationHelper.NOTIFICATION_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NotificationHelper.NOTIFICATION_ID, notification)
+        }
+
+        when (intent?.action) {
+            ACTION_START -> {
+                val config = intent.getStringExtra(EXTRA_CONFIG)
+                    ?: return broadcastError("No config provided").let { START_NOT_STICKY }
+                val emergency = intent.getBooleanExtra(EXTRA_EMERGENCY_MODE, false)
+
+                desiredConfigJson = config
+                desiredEmergencyMode = emergency
+                handoverJob?.cancel()
+                killStaleProcesses()
+                tearingDown.set(false)
+                startNetworkMonitor()
+                connectJob = scope.launch { establishTunnel(config, emergency) }
+            }
+            ACTION_STOP -> Thread { tearDownTunnel("stop-intent") }.start()
+        }
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (activeInstance === this) activeInstance = null
+        tearDownTunnel("on-destroy")
+        scope.cancel()
+    }
+
+    override fun onRevoke() {
+        tearDownTunnel("on-revoke")
+        super.onRevoke()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    // ── Tunnel setup ──────────────────────────────────────────────────────────
+
+    private suspend fun establishTunnel(configJson: String, emergencyMode: Boolean, handover: Boolean = false) {
+        currentCoroutineContext().ensureActive()
+        if (desiredConfigJson != configJson) return
+        try { File(filesDir, XRAY_LOG_FILE).writeText("") } catch (_: Exception) {}
+        try { File(filesDir, TUN2SOCKS_LOG_FILE).writeText("") } catch (_: Exception) {}
+
+        appendLog("[DIAG] nativeLibraryDir=${applicationInfo.nativeLibraryDir}")
+        appendLog("[DIAG] filesDir=${filesDir.absolutePath}")
+        appendLog("[DIAG] emergencyMode=$emergencyMode")
+
+        // Snapshot network type at connect start for switch detection at teardown.
+        connectNetworkType = detectNetworkType()
+        networkSwitched    = handover
+        serverRttMs        = null
+        serverIpVersion    = "unknown"
+        appendLog("[DIAG] connectNetworkType=$connectNetworkType")
+
+        try {
+            // 1. Resolve binaries
+            broadcastStep("binaries", true, "Resolving binaries")
+            val xrayBin     = resolveBinary("libxray.so")
+            val tun2sockBin = resolveBinary("libtun2socks.so")
+            broadcastStep("binaries", true,
+                "xray=${xrayBin.length()}B tun2socks=${tun2sockBin.length()}B")
+
+            val transportType = runCatching { JSONObject(configJson).optString("transport", "") }.getOrDefault("")
+            val isRealSsh = transportType == "real_ssh"
+
+            if (!isRealSsh) {
+            // Log Xray version for diagnostics
+            runCatching {
+                val verProc = ProcessBuilder(xrayBin.absolutePath, "version")
+                    .apply { redirectErrorStream(true) }.start()
+                val verOut = verProc.inputStream.bufferedReader().readText().take(200)
+                appendLog("[XRAY VERSION] $verOut")
+                broadcastStep("xray_version", true, verOut.lines().firstOrNull()?.take(100) ?: "?")
+            }.onFailure { appendLog("[XRAY VERSION] failed: ${it.message}") }
+
+            // 2. Write config
+            val configFile = File(filesDir, "xray.json")
+            configFile.writeText(configJson)
+            broadcastStep("config", true, "Config written (${configJson.length} bytes)")
+            appendLog("[CONFIG] $configJson")
+            // Summarise Reality params so they appear near the top of diagnostics
+            runCatching {
+                val cfg = JSONObject(configJson)
+                val outbound = cfg.getJSONArray("outbounds").getJSONObject(0)
+                val stream   = outbound.optJSONObject("streamSettings")
+                val reality  = stream?.optJSONObject("realitySettings")
+                val user     = outbound.getJSONObject("settings")
+                    .getJSONArray("vnext").getJSONObject(0)
+                    .getJSONArray("users").getJSONObject(0)
+                val addr  = outbound.getJSONObject("settings").getJSONArray("vnext").getJSONObject(0).getString("address")
+                val port  = outbound.getJSONObject("settings").getJSONArray("vnext").getJSONObject(0).getInt("port")
+                val flow  = user.optString("flow", "(none)")
+                val fp    = reality?.optString("fingerprint", "?") ?: "?"
+                val sni   = reality?.optString("serverName", "?") ?: "?"
+                val pbk   = reality?.optString("publicKey", "?")?.take(16)?.plus("…") ?: "?"
+                val sid   = reality?.optString("shortId", "?") ?: "?"
+                appendLog("[CONFIG-PARAMS] server=$addr:$port flow=$flow fp=$fp sni=$sni pbk=$pbk sid=$sid")
+                broadcastStep("config_params", true, "server=$addr:$port flow=$flow fp=$fp sni=$sni sid=$sid")
+            }.onFailure { e -> appendLog("[CONFIG-PARAMS] parse failed: ${e.message}") }
+
+            // 2b. Measure TCP RTT to server and detect IP version
+            try {
+                val cfg      = JSONObject(configJson)
+                val outbounds = cfg.getJSONArray("outbounds")
+                for (i in 0 until outbounds.length()) {
+                    val ob       = outbounds.getJSONObject(i)
+                    val settings = ob.optJSONObject("settings") ?: continue
+                    val vnext    = settings.optJSONArray("vnext") ?: continue
+                    if (vnext.length() > 0) {
+                        val server = vnext.getJSONObject(0)
+                        val host   = server.optString("address", "")
+                        val port   = server.optInt("port", 443)
+                        if (host.isNotEmpty()) {
+                            serverIpVersion = when {
+                                host.contains(':')                              -> "ipv6"
+                                host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) -> "ipv4"
+                                else                                            -> "unknown"
+                            }
+                            val t0 = System.currentTimeMillis()
+                            runCatching {
+                                Socket().use { s ->
+                                    s.soTimeout = 5_000
+                                    s.connect(InetSocketAddress(host, port), 5_000)
+                                }
+                            }
+                            serverRttMs = System.currentTimeMillis() - t0
+                            appendLog("[RTT] TCP to $host:$port = ${serverRttMs}ms ipVersion=$serverIpVersion")
+                            break
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                appendLog("[RTT] Could not measure: ${e.message}")
+            }
+
+            // 3. Config test
+            broadcastStep("config_test", true, "Running xray -test...")
+            val testResult = runConfigTest(xrayBin, configFile)
+            if (!testResult.passed) {
+                appendLog("[CONFIG TEST FAILED]\n${testResult.output}")
+                broadcastStep("config_test", false, testResult.firstError)
+                throw Exception("Config rejected by Xray: ${testResult.firstError}")
+            }
+            broadcastStep("config_test_ok", true, "Config valid")
+
+            // 4. Start Xray
+            broadcastStep("xray_start", true, "Starting Xray")
+            xrayProcess = ProcessBuilder(
+                xrayBin.absolutePath, "run", "-c", configFile.absolutePath
+            ).apply {
+                environment()["XRAY_LOCATION_ASSET"] = filesDir.absolutePath
+                redirectErrorStream(true)
+                directory(filesDir)
+            }.start()
+            writePidFile()
+            scope.launch { streamToLog(xrayProcess!!, "Xray") }
+            broadcastStep("xray_started", true, "Xray process launched (pid=${processPid(xrayProcess)})")
+
+            // 5. Wait for SOCKS5
+            if (!waitForPort(10808, 10_000L)) {
+                val alive    = xrayProcess?.isAlive == true
+                val exitCode = if (!alive) runCatching { xrayProcess?.exitValue() }.getOrNull() else null
+                val logTail  = readLogTail(30)
+                val msg = if (alive) "Port 10808 not open after 10s (Xray alive).\nLog:\n$logTail"
+                          else       "Xray exited code=$exitCode.\nLog:\n$logTail"
+                broadcastStep("socks_ready", false, msg)
+                throw Exception(msg)
+            }
+            broadcastStep("socks_ready", true, "SOCKS5 listening on 127.0.0.1:10808")
+
+            // Verify SOCKS5 with a real protocol handshake (not just TCP connect)
+            Log.i(TAG, "REALGRAM_SOCKS_READY port=10808 — verifying SOCKS5 handshake")
+            val socksHandshakeOk = verifySocks5Handshake(10808)
+            appendLog("[SOCKS5] handshake probe: ok=$socksHandshakeOk")
+            if (!socksHandshakeOk) {
+                val logTail = readLogTail(20)
+                broadcastStep("socks_handshake", false,
+                    "SOCKS5 handshake FAILED — Xray inbound not responding correctly on 127.0.0.1:10808\n$logTail")
+                throw Exception("SOCKS5 handshake failed on port 10808 — Xray may not have SOCKS inbound configured")
+            }
+            broadcastStep("socks_handshake", true, "SOCKS5 handshake OK on 127.0.0.1:10808 — Xray inbound responding")
+
+            } else {
+                // REAL SSH — replaces steps 2-5 (xray config/process/SOCKS-wait) with an
+                // SSH session + a local SOCKS5-over-SSH bridge bound to the SAME port
+                // (10808) Xray normally serves. Everything below (TUN builder, bypass
+                // apps, tun2socks launch, probes, metrics, watchdog, teardown) is
+                // transport-agnostic and runs completely unmodified for this path too.
+                val cfg = JSONObject(configJson)
+                val sshHost     = cfg.getString("host")
+                val sshPort     = cfg.getInt("port")
+                val sshUser     = cfg.getString("username")
+                val sshHostKeyFp = cfg.getString("hostKeyFingerprint")
+                appendLog("[REAL-SSH] target=$sshHost:$sshPort user=$sshUser")
+
+                serverIpVersion = if (sshHost.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) "ipv4" else "unknown"
+                runCatching {
+                    val t0 = System.currentTimeMillis()
+                    Socket().use { s -> s.soTimeout = 5_000; s.connect(InetSocketAddress(sshHost, sshPort), 5_000) }
+                    serverRttMs = System.currentTimeMillis() - t0
+                    appendLog("[RTT] TCP to $sshHost:$sshPort = ${serverRttMs}ms")
+                }.onFailure { appendLog("[RTT] Could not measure: ${it.message}") }
+
+                val tunnel = RealSshTunnel(applicationContext) { line ->
+                    appendLog("[REAL-SSH] $line")
+                    val step = line.substringBefore(':').trim()
+                    val msg  = line.substringAfter(':', line).trim()
+                    if (step.isNotEmpty() && step != line) broadcastStep(step, true, msg)
+                }
+                realSshTunnel = tunnel
+                try {
+                    tunnel.connect(sshHost, sshPort, sshUser, sshHostKeyFp, 10808)
+                } catch (e: Exception) {
+                    broadcastStep("ssh_connect_fail", false, "REAL SSH connect failed: ${e.message}")
+                    throw Exception("REAL SSH connect failed: ${e.message}")
+                }
+            }
+
+            // 6. Build TUN interface
+            val mtu = if (emergencyMode) 1280 else 1400
+            val vpnBuilder = Builder()
+                .setSession("RealGram")
+                .addAddress("10.0.0.2", 24)
+                .addAddress("fd00:1:fd00:1::2", 64)
+                .addDnsServer("1.1.1.1")
+                .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
+                .setMtu(mtu)
+            upstreamNetwork?.let { vpnBuilder.setUnderlyingNetworks(arrayOf(it)) }
+
+            if (!emergencyMode) {
+                vpnBuilder.addDnsServer("8.8.8.8")
+            }
+
+            // Exclude our UID so Xray (same UID) can reach the VPN server directly
+            // without looping back through TUN → tun2socks → Xray → TUN.
+            runCatching { vpnBuilder.addDisallowedApplication(packageName) }
+                .onFailure { e -> appendLog("[TUN] addDisallowedApplication failed: ${e.message}") }
+
+            // Smart Mode: user-selected apps bypass the VPN entirely. Each
+            // package is added individually so one uninstalled app never aborts
+            // the tunnel. EXPLICIT per-package OK/FAIL logging + a stored summary
+            // (never silently swallow NameNotFoundException) so tester reports can
+            // confirm exactly which packages were excluded from VpnService.
+            val bpSelected = ArrayList<String>()
+            val bpApplied = ArrayList<String>()
+            val bpFailed = ArrayList<String>()
+            runCatching {
+                val raw = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString(PREF_BYPASS_APPS, null)
+                if (!raw.isNullOrBlank()) {
+                    val arr = org.json.JSONArray(raw)
+                    for (i in 0 until arr.length()) {
+                        val pkg = arr.optString(i) ?: continue
+                        if (pkg.isBlank() || pkg == packageName) continue
+                        bpSelected.add(pkg)
+                        try {
+                            vpnBuilder.addDisallowedApplication(pkg)   // throws if not installed
+                            bpApplied.add(pkg)
+                            appendLog("[BYPASS] $pkg — OK")
+                        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+                            bpFailed.add("$pkg (not installed)")
+                            appendLog("[BYPASS] $pkg — FAIL (not installed)")
+                        } catch (e: Exception) {
+                            bpFailed.add("$pkg (${e.message})")
+                            appendLog("[BYPASS] $pkg — FAIL (${e.message})")
+                        }
+                    }
+                }
+            }.onFailure { e -> appendLog("[BYPASS] app list unreadable: ${e.message}") }
+            appendLog("[BYPASS] Selected: ${bpSelected.size}  Applied: ${bpApplied.size}  Failed: ${bpFailed.size}")
+            runCatching {
+                val summary = org.json.JSONObject()
+                    .put("selected", org.json.JSONArray(bpSelected))
+                    .put("applied", org.json.JSONArray(bpApplied))
+                    .put("failed", org.json.JSONArray(bpFailed))
+                    .put("applied_count", bpApplied.size)
+                    .put("updated_at", System.currentTimeMillis())
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                    .putString(PREF_BYPASS_RESULT, summary.toString()).apply()
+            }
+
+            appendLog("[TUN] IPv4+IPv6 routed through TUN — Xray blackhole handles unsupported IPv6")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                vpnBuilder.setMetered(false)
+            }
+
+            tunFd = vpnBuilder.establish()
+                ?: throw Exception("TUN establish() returned null — VPN permission revoked?")
+            val tunFdInt   = tunFd!!.fd
+            val tunInterface = findTunInterfaceName()
+
+            val cloexecResult = nativeClearCloexec(tunFdInt)
+            appendLog("[TUN] fd=$tunFdInt iface=${tunInterface ?: "?"} mtu=$mtu FD_CLOEXEC_clear=$cloexecResult emergencyMode=$emergencyMode")
+            Log.i(TAG, "REALGRAM_ROUTE_ADDED 0.0.0.0/0 ::/0 dns=${if (emergencyMode) "1.1.1.1" else "1.1.1.1,8.8.8.8"} iface=${tunInterface ?: "?"} fd=$tunFdInt mtu=$mtu")
+            broadcastStep("tun_created", true,
+                "TUN fd=$tunFdInt iface=${tunInterface ?: "?"} mtu=$mtu emergencyMode=$emergencyMode cloexec=$cloexecResult")
+            broadcastRouteDiagnostics(tunInterface, mtu, emergencyMode)
+
+            // 7. Launch tun2socks with output redirected to tun2socks.log
+            val tun2socksLogPath = File(filesDir, TUN2SOCKS_LOG_FILE).absolutePath
+            val args = "--device fd://$tunFdInt --proxy socks5://127.0.0.1:10808 --loglevel $TUN2SOCKS_LOG_LEVEL"
+            appendLog("[tun2socks] launch args: $args  logFile=$tun2socksLogPath")
+            broadcastStep("tun2socks_started", true, "Launching: $args")
+
+            val pid = nativeStartTun2socks(
+                tun2sockBin.absolutePath,
+                tunFdInt,
+                "socks5://127.0.0.1:10808",
+                TUN2SOCKS_LOG_LEVEL,
+                tun2socksLogPath
+            )
+            if (pid <= 0) throw Exception("nativeStartTun2socks failed (pid=$pid)")
+            tun2socksPid = pid
+            writePidFile()
+            appendLog("[tun2socks] forked pid=$pid")
+
+            // Start streaming tun2socks.log → xray.log
+            tunnelLogJob?.cancel()
+            tunnelLogJob = scope.launch { tailTun2socksLog() }
+
+            // Wait for tun2socks to initialise
+            delay(2_000L)
+
+            val firstExit = nativeTun2socksExitCode(pid)
+            if (firstExit != -2) {
+                val t2sLog = readTun2socksLog()
+                val logTail = readLogTail(20)
+                broadcastStep("tun2socks_alive", false,
+                    "tun2socks exited code=$firstExit pid=$pid\nargs=$args\ntun2socks output:\n$t2sLog\nxray log:\n$logTail")
+                throw Exception("tun2socks exited (code=$firstExit).\nargs=$args\nt2s output:\n$t2sLog")
+            }
+            Log.i(TAG, "REALGRAM_TUN_STARTED fd=$tunFdInt pid=$pid proxy=socks5://127.0.0.1:10808 iface=${tunInterface ?: "?"}")
+            broadcastStep("tun2socks_alive", true,
+                "tun2socks running pid=$pid — fd://$tunFdInt → socks5://127.0.0.1:10808")
+
+            // 8. Probe internet via VPN network — confirms actual device traffic routing.
+            // This goes through TUN → tun2socks → SOCKS5 → Xray, NOT via direct SOCKS5.
+            // Uses Network.openConnection() which bypasses UID exclusion on the VPN network.
+            // Do NOT mark CONNECTED until HTTP 200 body is received.
+            broadcastStep("tun_probe", true, "Probing TUN routing — https://1.1.1.1/cdn-cgi/trace…")
+            appendLog("[TUN-PROBE] Starting TUN routing verification via ConnectivityManager VPN network")
+            val tunProbe = runTunNetworkProbe()
+
+            if (!tunProbe.ok) {
+                val category = tunProbe.category
+                val msg = "Server connected, but internet is not routed through VPN. ${tunProbe.message}"
+                broadcastStep("tun_probe", false, "[$category] $msg")
+                // Log UUID being used — helps detect UUID mismatches in admin diagnostics.
+                // "invalid request user id" in Xray log = UUID in this config doesn't match server.
+                runCatching {
+                    val cfg  = JSONObject(configJson)
+                    val uuid = cfg.getJSONArray("outbounds").getJSONObject(0)
+                        .getJSONObject("settings").getJSONArray("vnext").getJSONObject(0)
+                        .getJSONArray("users").getJSONObject(0).optString("id", "?")
+                    appendLog("[UUID-CHECK] uuid=${uuid.take(8)}… category=$category — if 'invalid request user id' appears above, UUID mismatch")
+                }.onFailure {}
+                appendLog("[TUN-PROBE FAILED] category=$category $msg")
+                sendBroadcast(Intent(BROADCAST_ROUTING_FAIL).apply {
+                    setPackage(packageName)
+                    putExtra(EXTRA_ERROR, msg)
+                    putExtra("failure_category", category)
+                })
+                broadcastError(msg, category)
+                tearDownTunnel("tun-probe-failed")
+                return
+            }
+
+            broadcastStep("tun_probe", true, "TUN routing confirmed — ${tunProbe.message}")
+            appendLog("[TUN-PROBE OK] ${tunProbe.message}")
+
+            // 9. Broadcast CONNECTED — TUN routing verified by real HTTPS GET
+            broadcastStep("vpn_connected", true, "Tunnel active — internet routing confirmed")
+            Log.i(TAG, "VPN tunnel active — TUN routing verified")
+            sendBroadcast(Intent(BROADCAST_CONNECTED).apply {
+                setPackage(packageName)
+                putExtra("probe_ok",    true)
+                // Native handover preserves the JS session and cumulative traffic accounting.
+                putExtra("probe_update", handover)
+                putExtra("rtt_ms",      serverRttMs ?: -1L)
+                putExtra("ip_version",  serverIpVersion)
+            })
+            // Store in companion for future XrayModule access
+            lastRttMs     = serverRttMs ?: -1L
+            lastIpVersion = serverIpVersion
+
+            // 10. Start continuous metrics loop + process watchdog
+            startMetricsLoop(tunInterface)
+            startWatchdog()
+
+            // 11. Background validation — now used mainly for metrics/ping. Then keep
+            // re-probing periodically (see PROBE_RECHECK_INTERVAL_MS above) — the
+            // one-shot validation alone can't catch the ISP starting to interfere
+            // mid-session.
+            probeRecheckJob?.cancel()
+            probeRecheckJob = scope.launch {
+                runBackgroundValidation(tunInterface)
+                startProbeRecheckLoop(tunInterface)
+            }
+
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Tunnel setup failed: ${e.message}", e)
+            appendLog("[TUNNEL FAILED] ${e.message}")
+            val t2sLog = runCatching { readTun2socksLog() }.getOrDefault("(unavailable)")
+            appendLog("[tun2socks output at failure]\n$t2sLog")
+            broadcastError(e.message ?: "Unknown VPN error")
+            tearDownTunnel("setup-failed")
+        }
+    }
+
+    // ── Background validation (non-blocking) ─────────────────────────────────
+
+    private suspend fun runBackgroundValidation(tunInterface: String?) {
+        try {
+            // Log tun2socks status before probing
+            val t2sLog = readTun2socksLog()
+            val t2sHasErrors = t2sLog.lines().any { line ->
+                val l = line.lowercase()
+                l.contains("error") || l.contains("fatal") || l.contains("failed") ||
+                l.contains("panic") || l.contains("exit")
+            }
+            if (t2sHasErrors) {
+                broadcastStep("tun2socks_check", false,
+                    "tun2socks reported errors — TUN forwarding may be degraded.\n$t2sLog")
+            } else {
+                broadcastStep("tun2socks_check", true, "tun2socks active")
+            }
+
+            val validation = runDeepValidation(tunInterface)
+
+            broadcastStep("routing_validation", validation.ok, validation.message)
+
+            if (!validation.ok) {
+                broadcastStep("probe_warning", false,
+                    "Internet probe failed — tunnel active but HTTP validation timed out. " +
+                    "Apps may still work. ${validation.message}")
+                appendLog("[BG-VALIDATION] WARN: ${validation.message}")
+            } else {
+                appendLog("[BG-VALIDATION] OK: probeOk=${validation.probeOk} — ${validation.message}")
+            }
+
+            // Publish final probe result without resetting session counters
+            sendBroadcast(Intent(BROADCAST_CONNECTED).apply {
+                setPackage(packageName)
+                putExtra("probe_ok", validation.probeOk)
+                putExtra("probe_update", true)
+            })
+
+            // Browser-compatibility probes: run after primary validation so they don't
+            // delay the CONNECTED signal. Tests real websites and reports QUIC status.
+            if (validation.probeOk) {
+                runBrowserCompatibilityProbes()
+            }
+        } catch (e: Exception) {
+            appendLog("[BG-VALIDATION] Exception: ${e.message}")
+            broadcastStep("validation_error", false, "Background validation error: ${e.message}")
+        }
+    }
+
+    // ── Periodic internet-routing recheck ─────────────────────────────────────
+    // The actual fix for "connected but no internet" (see PROBE_RECHECK_* consts
+    // above for why runBackgroundValidation() alone isn't enough). Runs for as
+    // long as this session stays connected; the JS side already polls
+    // getLastProbeResult() every 20s (vpnStore.ts, shipped v0.9.145) and handles
+    // the banner + node-failover handoff once probe_ok flips — this loop just
+    // needs to keep that native flag honest.
+
+    private suspend fun startProbeRecheckLoop(tunInterface: String?) {
+        var failStreak = 0
+        while (scope.isActive) {
+            delay(PROBE_RECHECK_INTERVAL_MS)
+            if (tearingDown.get()) break
+            val xAlive = realSshTunnel?.let { it.isConnected() } ?: (xrayProcess?.isAlive == true)
+            val tAlive = tun2socksPid?.let { nativeTun2socksExitCode(it) == -2 } == true
+            if (!xAlive || !tAlive) break // watchdog is already tearing this session down
+
+            var ok = false
+            for (host in PROBE_RECHECK_TARGETS) {
+                val (hostOk, bytes, _) = runHttpsProbe(host)
+                if (hostOk) { ok = true; appendLog("[PROBE-RECHECK] $host OK (${bytes}B)"); break }
+            }
+
+            if (ok) {
+                if (failStreak >= PROBE_RECHECK_FAIL_THRESHOLD) {
+                    appendLog("[PROBE-RECHECK] recovered — real-website probe OK again")
+                    sendBroadcast(Intent(BROADCAST_CONNECTED).apply {
+                        setPackage(packageName)
+                        putExtra("probe_ok", true)
+                        putExtra("probe_update", true)
+                    })
+                }
+                failStreak = 0
+                continue
+            }
+
+            failStreak += 1
+            appendLog("[PROBE-RECHECK] all real-website probes failed (streak=$failStreak)")
+            if (failStreak == PROBE_RECHECK_FAIL_THRESHOLD) {
+                appendLog("[PROBE-RECHECK] confirmed — tunnel up but internet not routing, reporting probe_ok=false")
+                sendBroadcast(Intent(BROADCAST_CONNECTED).apply {
+                    setPackage(packageName)
+                    putExtra("probe_ok", false)
+                    putExtra("probe_update", true)
+                })
+            }
+        }
+    }
+
+    // ── Browser compatibility probes ──────────────────────────────────────────
+    // Probes real websites via TCP/TLS over SOCKS5 — confirms Chrome/Firefox browsing works.
+    // UDP/443 (QUIC/HTTP3) is blackholed in the Xray routing config; Chrome falls back to
+    // TCP HTTPS automatically. We report the QUIC mode here for the diagnostics UI.
+
+    private suspend fun runBrowserCompatibilityProbes() {
+        appendLog("[BROWSER-COMPAT] Starting browser compatibility probes")
+
+        // TCP HTTPS probe — real websites Chrome would visit
+        data class BrowserTarget(val host: String, val label: String)
+        val targets = listOf(
+            BrowserTarget("example.com",   "example.com"),
+            BrowserTarget("vg.no",         "vg.no"),
+            BrowserTarget("cloudflare.com","cloudflare.com"),
+        )
+
+        var tcpHttpsOk   = false
+        var tcpHttpsHost = ""
+        var tcpHttpsBytes = 0
+
+        for (t in targets) {
+            val (ok, bytes, snippet) = runHttpsProbe(t.host)
+            appendLog("[BROWSER-COMPAT] ${t.label}:443 TCP/TLS → ok=$ok bytes=$bytes snippet=$snippet")
+            broadcastStep("browser_probe_${t.label.replace('.', '_')}", ok,
+                "${t.label}:443 TCP/TLS → ${if (ok) "OK (${bytes}B)" else "FAIL: $snippet"}")
+            if (ok && !tcpHttpsOk) { tcpHttpsOk = true; tcpHttpsHost = t.label; tcpHttpsBytes = bytes }
+        }
+
+        // DNS probe — confirm hostname resolution works end-to-end
+        val dnsOk = runCatching {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val proxy = java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
+                Socket(proxy).use { s ->
+                    s.connect(InetSocketAddress.createUnresolved("one.one.one.one", 80), 5_000)
+                    true
+                }
+            }
+        }.onFailure { e -> appendLog("[BROWSER-COMPAT] DNS probe failed: ${e.message}") }
+         .getOrElse { false }
+
+        if (dnsOk) Log.i(TAG, "REALGRAM_DNS_OK — one.one.one.one resolved via SOCKS5")
+        broadcastStep("dns_resolve", dnsOk,
+            if (dnsOk) "DNS OK — hostname resolution working through tunnel"
+            else        "DNS FAIL — hostname resolution failed through tunnel")
+
+        // QUIC/UDP status — always blocked (routing rule: udp port 443 → blackhole).
+        // Chrome detects the fast rejection and retries over TCP/TLS without hanging.
+        broadcastStep("quic_status", true,
+            "UDP/443 blackholed — QUIC fast-rejected · Chrome uses TCP HTTPS fallback · No hang")
+
+        // Overall browser compatibility verdict
+        val tcpMsg = if (tcpHttpsOk)
+            "TCP HTTPS OK via $tcpHttpsHost ($tcpHttpsBytes B) · DNS ${if (dnsOk) "OK" else "FAIL"} · QUIC blocked (TCP fallback active)"
+        else
+            "TCP HTTPS FAILED — browser browsing may not work through this tunnel"
+
+        broadcastStep("browser_compat", tcpHttpsOk, tcpMsg)
+        appendLog("[BROWSER-COMPAT] tcpHttpsOk=$tcpHttpsOk dnsOk=$dnsOk quic=blocked(blackhole) host=$tcpHttpsHost")
+
+        // Publish QUIC-aware connected status so the UI can show the right message
+        sendBroadcast(Intent(BROADCAST_CONNECTED).apply {
+            setPackage(packageName)
+            putExtra("probe_ok",     tcpHttpsOk)
+            putExtra("probe_update", true)
+            putExtra("quic_blocked", true)
+            putExtra("tcp_https_ok", tcpHttpsOk)
+            putExtra("dns_ok",       dnsOk)
+        })
+    }
+
+    // ── Deep validation ───────────────────────────────────────────────────────
+
+    private data class ValidationResult(val ok: Boolean, val message: String, val probeOk: Boolean = false, val category: String = FAIL_NO_INTERNET)
+
+    private suspend fun runDeepValidation(tunInterface: String?): ValidationResult {
+        // Snapshot TUN bytes before probe
+        val bytesBefore = tunInterface?.let { readInterfaceBytes(it) }
+        appendLog("[VALIDATION] TUN snapshot before probe: rx=${bytesBefore?.first ?: -1} tx=${bytesBefore?.second ?: -1} iface=${tunInterface ?: "?"}")
+
+        // Step A: SOCKS5 TCP connect to a reliable IP (proves Xray is listening).
+        // Use 1.1.1.1:80 — raw IP, no DNS, fast TCP-level confirmation.
+        appendLog("[VALIDATION-A] SOCKS5 TCP connect → 1.1.1.1:80")
+        val tcpOk = runCatching {
+            val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
+            Socket(proxy).use { sock ->
+                sock.connect(InetSocketAddress("1.1.1.1", 80), 10_000)
+                true
+            }
+        }.onFailure { e -> appendLog("[VALIDATION-A] TCP connect failed: ${e.message}") }
+         .getOrElse { false }
+        appendLog("[VALIDATION-A] result: tcpOk=$tcpOk")
+
+        if (!tcpOk) {
+            appendLog("[VALIDATION] FATAL: Xray SOCKS5 unreachable. Log:\n${readLogTail(60)}")
+            return ValidationResult(false, "SOCKS5 TCP connect to 1.1.1.1:80 failed — Xray unreachable or VPN server down")
+        }
+
+        // Small gap so Xray can finish writing any in-flight log lines.
+        delay(300L)
+        appendLog("[VALIDATION] Xray log before probes:\n${readLogTail(30)}")
+
+        // Step B: HTTPS probe via SSLSocket — tried FIRST because xtls-rprx-vision
+        // (Vision flow) is specifically designed to splice TLS inner streams. Vision
+        // correctly detects the TLS ClientHello and forwards raw bytes to the target.
+        // Plain HTTP (non-TLS) requires Vision's fallback path which can be slower
+        // under high-latency conditions. Trying HTTPS first maximises pass rate
+        // on Vision Reality servers in high-latency regions (Turkey, Iran, etc.).
+        var httpsOk     = false
+        var httpsBytes  = 0
+        var httpsHost   = ""
+
+        for (host in listOf("connectivitycheck.gstatic.com", "captive.apple.com", "clients3.google.com", "www.cloudflare.com")) {
+            appendLog("[VALIDATION-B] HTTPS probe -> $host:443 via SOCKS5+TLS")
+            val (ok, bytes, snippet) = runHttpsProbe(host)
+            appendLog("[VALIDATION-B] $host -> ok=$ok bytes=$bytes snippet=$snippet")
+            if (ok) { httpsOk = true; httpsBytes = bytes; httpsHost = host; break }
+        }
+
+        // Step C: HTTP GET via SOCKS5 — fallback for servers without Vision flow
+        // (e.g. WebSocket/XHTTP transport profiles).
+        // connectivitycheck.gstatic.com returns HTTP 204, captive.apple.com HTTP 200.
+        // 1.1.1.1 is a raw-IP fallback (no DNS resolution needed inside Xray).
+        data class ProbeTarget(val host: String, val port: Int, val isDomain: Boolean)
+        val httpTargets = listOf(
+            ProbeTarget("connectivitycheck.gstatic.com", 80, true),
+            ProbeTarget("captive.apple.com",             80, true),
+            ProbeTarget("1.1.1.1",                       80, false),
+        )
+
+        var httpOk      = false
+        var httpBytes   = 0
+        var httpSnippet = "not attempted"
+        var httpHost    = ""
+
+        if (!httpsOk) {
+            for (target in httpTargets) {
+                appendLog("[VALIDATION-C] HTTP GET http://${target.host}/ via SOCKS5")
+                val (ok, bytes, snippet) = runDeepHttpProbe(target.host, target.port, target.isDomain)
+                appendLog("[VALIDATION-C] ${target.host} -> ok=$ok bytes=$bytes snippet=$snippet")
+                httpSnippet = snippet
+                if (ok) { httpOk = true; httpBytes = bytes; httpHost = target.host; break }
+            }
+        }
+
+        // Snapshot TUN bytes after probe. NOTE: the probes above go over SOCKS5 to
+        // 127.0.0.1:10808 (loopback), so they never touch the TUN interface either
+        // way — this snapshot does NOT actually exercise addDisallowedApplication and
+        // can't tell us whether the exclusion is working. See verifySelfExclusion()
+        // below for the real check.
+        val bytesAfter = tunInterface?.let { readInterfaceBytes(it) }
+        val rxSnap = bytesAfter?.first  ?: -1L
+        val txSnap = bytesAfter?.second ?: -1L
+        appendLog("[VALIDATION] TUN after probes: rx=$rxSnap tx=$txSnap")
+
+        // Real self-exclusion check: does OUR app's own traffic actually bypass the
+        // tunnel, or does it silently loop through it? addDisallowedApplication() only
+        // throws for NameNotFoundException, which can't happen for our own package —
+        // so the "[TUN] addDisallowedApplication failed" log line at setup time never
+        // fires even when the OS fails to honor the exclusion in practice (a known
+        // quirk on some OEM ROMs). This runs a plain, non-SOCKS, non-VPN-bound HTTPS
+        // request and watches whether it moves the TUN interface's packet counters.
+        verifySelfExclusion(tunInterface)
+
+        val probeOk = httpOk || httpsOk
+        publishMetrics(tunInterface, rxSnap, txSnap, probeOk)
+
+        if (httpsOk) {
+            Log.i(TAG, "REALGRAM_HTTP_OK via $httpsHost (${httpsBytes}B) TCP+HTTPS — TUN rx=$rxSnap tx=$txSnap")
+            Log.i(TAG, "REALGRAM_DNS_OK — hostname resolved via Xray SOCKS5")
+            return ValidationResult(true,
+                "TCP+HTTPS OK via $httpsHost (${httpsBytes}B) — TLS/Vision traffic confirmed. " +
+                "TUN rx=$rxSnap tx=$txSnap",
+                probeOk = true)
+        }
+        if (httpOk) {
+            Log.i(TAG, "REALGRAM_HTTP_OK via $httpHost (${httpBytes}B) TCP+HTTP — TUN rx=$rxSnap tx=$txSnap")
+            return ValidationResult(true,
+                "TCP+HTTP OK via $httpHost (${httpBytes}B). TUN rx=$rxSnap tx=$txSnap",
+                probeOk = true)
+        }
+
+        // All probes failed.
+        appendLog("[VALIDATION] HARD FAIL — TCP OK but ALL HTTPS+HTTP probes timed out. " +
+            "Possible causes: wrong flow/SNI, wrong paths (WS/XHTTP), server-side drop. " +
+            "HTTP snippet: $httpSnippet  Disconnecting to try next profile.")
+        broadcastStep("probe_fail", false,
+            "TCP OK — HTTPS+HTTP probes all failed. VPN not confirmed. Trying next profile.")
+
+        return ValidationResult(false,
+            "TCP OK — but no HTTP or HTTPS data received through tunnel. " +
+            "HTTP snippet: $httpSnippet. VPN server may not be forwarding traffic.")
+    }
+
+    // ── TUN routing probe (ConnectivityManager VPN network) ───────────────────
+    // Attempts a VPN-network-bound HTTPS probe first. Our app UID is excluded from
+    // TUN (addDisallowedApplication) so Network.bindSocket() / openConnection() may
+    // return EPERM on some devices. When EPERM occurs we fall back to process-health
+    // validation: confirm Xray + tun2socks are alive and the TUN interface exists.
+
+    private suspend fun runTunNetworkProbe(): ValidationResult {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        appendLog("[TUN-PROBE] Waiting for VPN network to appear in ConnectivityManager…")
+
+        var vpnNet: android.net.Network? = null
+        val findDeadline = System.currentTimeMillis() + 8_000L
+        while (System.currentTimeMillis() < findDeadline && vpnNet == null) {
+            vpnNet = cm?.allNetworks?.firstOrNull { net ->
+                cm.getNetworkCapabilities(net)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            }
+            if (vpnNet == null) delay(500L)
+        }
+
+        if (vpnNet == null) {
+            appendLog("[TUN-PROBE] VPN network not found in ConnectivityManager after 8s")
+            return ValidationResult(false,
+                "VPN network not registered with system — TUN routing unavailable")
+        }
+        appendLog("[TUN-PROBE] VPN network found: $vpnNet — GET https://1.1.1.1/cdn-cgi/trace")
+
+        val probeOutcome = runCatching {
+            withContext(Dispatchers.IO) {
+                // Try several captive-portal / trace endpoints — choose the first 200 response.
+                // Targets are chosen to be unrestricted in Iran and have minimal TLS overhead.
+                val targets = listOf(
+                    "https://1.1.1.1/cdn-cgi/trace",          // Cloudflare — primary
+                    "http://cp.cloudflare.com/",               // Cloudflare HTTP captive portal
+                    "http://connectivitycheck.gstatic.com/",   // Google Android captive check
+                    "https://captive.apple.com/hotspot-detect.html",
+                )
+                var lastErr = ""
+                var result: ValidationResult? = null
+                for (target in targets) {
+                    if (result != null) break
+                    runCatching {
+                        val url  = URL(target)
+                        val conn = vpnNet.openConnection(url) as HttpURLConnection
+                        // 25 s: Reality TLS (~50 ms RTT) + VLESS framing + target connection
+                        // under Iran latency (packet loss, censorship overhead).
+                        conn.connectTimeout = 25_000
+                        conn.readTimeout    = 25_000
+                        conn.setRequestProperty("User-Agent", "Realgram/1.0")
+                        try {
+                            val code = conn.responseCode
+                            if (code in 200..299) {
+                                val body   = conn.inputStream.bufferedReader().readText()
+                                val ipLine = body.lines().firstOrNull { it.startsWith("ip=") } ?: ""
+                                val info   = if (ipLine.isNotEmpty()) ipLine else "HTTP $code ${body.length}B"
+                                appendLog("[TUN-PROBE] OK: $target → $info")
+                                result = ValidationResult(true, "$target → $info", probeOk = true)
+                            } else {
+                                appendLog("[TUN-PROBE] $target → HTTP $code (non-2xx)")
+                                lastErr = "HTTP $code from $target"
+                            }
+                        } finally {
+                            conn.disconnect()
+                        }
+                    }.onFailure { e ->
+                        lastErr = "${e.javaClass.simpleName}: ${e.message?.take(80)}"
+                        appendLog("[TUN-PROBE] $target failed: $lastErr")
+                    }
+                }
+                result ?: ValidationResult(false,
+                    "All TUN probes failed. Last: $lastErr")
+            }
+        }
+
+        probeOutcome.onSuccess { r -> if (r.ok) return r }
+
+        // vpnNet.openConnection() failed. Since our app UID is excluded from TUN via
+        // addDisallowedApplication(), Network.openConnection() is inherently unreliable
+        // and can fail with EPERM, timeout, SSL errors, or connection refused depending
+        // on the Android ROM. Always fall back to SOCKS5-based internet validation which
+        // is always reachable regardless of VPN UID exclusion.
+        val err    = probeOutcome.exceptionOrNull()
+        val errMsg = err?.message ?: ""
+        appendLog("[TUN-PROBE] openConnection failed (${err?.javaClass?.simpleName}: $errMsg) — running SOCKS5 fallback")
+        broadcastStep("tun_probe_fallback", true,
+            "VPN network probe failed (${errMsg.take(80)}) — checking SOCKS5 routing")
+        return runTunEpermFallback()
+    }
+
+    // Fallback when bindSocket returns EPERM (app UID excluded from VPN via addDisallowedApplication).
+    // Validates by running a SOCKS5-based internet probe through Xray instead of binding to the VPN
+    // network directly. This is the authoritative check: if Xray can forward real traffic, the
+    // tunnel is working regardless of whether Network.openConnection() is available.
+    private suspend fun runTunEpermFallback(): ValidationResult {
+        // REAL SSH sessions never spawn xrayProcess (see establishTunnel) — the
+        // SSH bridge's own connection state is the correct liveness signal there.
+        val xrayAlive = realSshTunnel?.let { it.isConnected() } ?: (xrayProcess?.isAlive == true)
+        val t2sAlive  = tun2socksPid?.let { nativeTun2socksExitCode(it) == -2 } == true
+        val tunIface  = findTunInterfaceName()
+        val tunExists = tunIface != null
+
+        appendLog("[TUN-FALLBACK] processes: xray=$xrayAlive t2s=$t2sAlive tunIface=$tunIface")
+
+        if (!xrayAlive || !t2sAlive || !tunExists) {
+            val reasons = buildList<String> {
+                if (!xrayAlive) add(if (realSshTunnel != null) "REAL SSH not connected" else "Xray not running")
+                if (!t2sAlive)  add("tun2socks not running")
+                if (!tunExists) add("TUN interface missing")
+            }.joinToString("; ")
+            broadcastStep("tun_fallback_fail", false, "Processes unhealthy: $reasons")
+            return ValidationResult(false, "VPN setup incomplete: $reasons")
+        }
+
+        // Run SOCKS5 HTTPS probe — this goes through Xray (localhost:10808) and confirms
+        // the tunnel is actually forwarding traffic to the internet. Unlike Network.openConnection(),
+        // SOCKS5 is always reachable by our process regardless of VPN UID exclusion.
+        broadcastStep("tun_eperm_probe", true, "Running SOCKS5 probe to confirm internet routing…")
+        var probeOk    = false
+        var probeNote  = "not attempted"
+
+        for (host in listOf("connectivitycheck.gstatic.com", "captive.apple.com", "clients3.google.com")) {
+            val (ok, bytes, snippet) = runHttpsProbe(host)
+            appendLog("[TUN-FALLBACK] SOCKS5 HTTPS probe → $host: ok=$ok bytes=$bytes snippet=$snippet")
+            if (ok) { probeOk = true; probeNote = "HTTPS OK via $host (${bytes}B)"; break }
+            probeNote = "HTTPS $host failed: $snippet"
+        }
+
+        if (!probeOk) {
+            // Try plain HTTP fallback with domain names
+            val (ok, bytes, snippet) = runDeepHttpProbe("connectivitycheck.gstatic.com", 80, true)
+            appendLog("[TUN-FALLBACK] SOCKS5 HTTP probe: ok=$ok bytes=$bytes snippet=$snippet")
+            if (ok) { probeOk = true; probeNote = "HTTP OK via connectivitycheck.gstatic.com (${bytes}B)" }
+            else probeNote = "domain probes failed — last: $snippet"
+        }
+
+        // Final raw-IP fallback: 1.1.1.1:80 avoids DNS resolution entirely.
+        // If domain probes fail due to DNS being broken through this tunnel but the
+        // tunnel itself is forwarding TCP, this confirms connectivity exists.
+        if (!probeOk) {
+            val (ok, bytes, snippet) = runDeepHttpProbe("1.1.1.1", 80, false)
+            appendLog("[TUN-FALLBACK] SOCKS5 raw-IP probe 1.1.1.1:80: ok=$ok bytes=$bytes snippet=$snippet")
+            if (ok) { probeOk = true; probeNote = "HTTP OK via 1.1.1.1:80 raw-IP (${bytes}B)" }
+            else probeNote = "All SOCKS5 probes failed — last: $snippet"
+        }
+
+        val xrayLogTail = readLogTail(40)
+        val failCategory = if (probeOk) FAIL_NO_INTERNET else classifyFailure(xrayLogTail)
+        appendLog("[TUN-FALLBACK] result: probeOk=$probeOk category=$failCategory note=$probeNote xray=$xrayAlive t2s=$t2sAlive TUN=$tunIface")
+
+        return if (probeOk) {
+            Log.i(TAG, "REALGRAM_HTTP_OK via SOCKS5 — $probeNote TUN=$tunIface")
+            broadcastStep("tun_fallback_ok", true,
+                "SOCKS5 internet confirmed: $probeNote TUN=$tunIface")
+            ValidationResult(
+                ok       = true,
+                message  = "SOCKS5 probe passed: $probeNote TUN=$tunIface",
+                probeOk  = true,
+                category = FAIL_NO_INTERNET,
+            )
+        } else {
+            broadcastStep("tun_fallback_fail", false,
+                "EPERM fallback — SOCKS5 internet probe FAILED [$failCategory]: $probeNote")
+            ValidationResult(
+                ok       = false,
+                message  = "Server connected but internet not routed through VPN. $probeNote",
+                category = failCategory,
+            )
+        }
+    }
+
+    // Returns (ok, bytesRead, snippet) — plain HTTP/1.0 GET over SOCKS5.
+    // 10s connect timeout: allows for Reality TLS handshake + VLESS setup + target
+    // connection under high-latency conditions (Turkey ~50ms RTT, potential packet loss).
+    private suspend fun runDeepHttpProbe(
+        host: String, port: Int, isDomain: Boolean = false
+    ): Triple<Boolean, Int, String> {
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
+                Socket(proxy).use { sock ->
+                    if (isDomain) {
+                        sock.connect(InetSocketAddress.createUnresolved(host, port), 10_000)
+                    } else {
+                        sock.connect(InetSocketAddress(host, port), 10_000)
+                    }
+                    sock.soTimeout = 10_000   // read timeout after connect
+                    val req = "GET / HTTP/1.0\r\nHost: $host\r\nUser-Agent: Realgram/1.0\r\nConnection: close\r\n\r\n"
+                    sock.getOutputStream().apply { write(req.toByteArray()); flush() }
+                    val buf  = ByteArray(2048)
+                    val read = sock.getInputStream().read(buf)
+                    if (read > 0) {
+                        val snippet = String(buf, 0, minOf(read, 80)).replace("\r\n", " ").take(80)
+                        Triple(true, read, snippet)
+                    } else {
+                        Triple(false, 0, "0 bytes read")
+                    }
+                }
+            }
+        }.onFailure { e ->
+            appendLog("[HTTP PROBE] $host:$port failed: ${e.javaClass.simpleName}: ${e.message}")
+        }.getOrElse { Triple(false, 0, it?.message?.take(60) ?: "exception") }
+    }
+
+    // Returns (ok, bytesRead, snippet) — HTTPS/TLS GET over SOCKS5.
+    // This is the PRIMARY probe for xtls-rprx-vision servers: the inner TLS ClientHello
+    // is exactly what Vision recognises and splices. Tried FIRST in the validation sequence.
+    // 12s timeout: Reality TLS + VLESS + target TLS handshake + HTTP response in high-latency
+    // regions (Turkey, Iran) with potential packet retransmits.
+    private suspend fun runHttpsProbe(host: String): Triple<Boolean, Int, String> {
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                val proxy   = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
+                val rawSock = Socket(proxy)
+                try {
+                    rawSock.connect(InetSocketAddress.createUnresolved(host, 443), 12_000)
+                    rawSock.soTimeout = 12_000
+                    val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+                    val sslSock   = sslFactory.createSocket(rawSock, host, 443, true) as SSLSocket
+                    sslSock.soTimeout = 12_000
+                    try {
+                        sslSock.startHandshake()
+                        val req = "GET / HTTP/1.1\r\nHost: $host\r\nUser-Agent: Realgram/1.0\r\nConnection: close\r\n\r\n"
+                        sslSock.outputStream.apply { write(req.toByteArray()); flush() }
+                        val buf  = ByteArray(2048)
+                        val read = sslSock.inputStream.read(buf)
+                        if (read > 0) {
+                            val snippet = String(buf, 0, minOf(read, 80)).replace("\r\n", " ").take(80)
+                            Triple(true, read, "TLS OK: $snippet")
+                        } else {
+                            Triple(false, 0, "TLS handshake OK but 0 bytes")
+                        }
+                    } finally {
+                        runCatching { sslSock.close() }
+                    }
+                } finally {
+                    runCatching { rawSock.close() }
+                }
+            }
+        }.onFailure { e ->
+            appendLog("[HTTPS PROBE] $host:443 failed: ${e.javaClass.simpleName}: ${e.message}")
+        }.getOrElse { Triple(false, 0, it?.message?.take(80) ?: "exception") }
+    }
+
+    // ── Periodic metrics loop ─────────────────────────────────────────────────
+
+    private fun startMetricsLoop(tunInterface: String?) {
+        metricsJob?.cancel()
+        metricsJob = scope.launch {
+            var lastRx = readInterfaceBytes(tunInterface ?: "")?.first  ?: 0L
+            var lastTx = readInterfaceBytes(tunInterface ?: "")?.second ?: 0L
+            var iteration = 0
+            var noTrafficIterations = 0
+            while (isActive) {
+                delay(METRICS_INTERVAL_MS)
+                iteration++
+
+                // First iteration: async DNS health check (does not block CONNECTED state)
+                if (iteration == 1) {
+                    scope.launch {
+                        val dnsOk = runCatching {
+                            val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
+                            Socket(proxy).use { s ->
+                                s.soTimeout = 5_000
+                                s.connect(InetSocketAddress.createUnresolved("www.google.com", 80), 5_000)
+                                true
+                            }
+                        }.getOrElse { e ->
+                            appendLog("[DNS-CHECK] Failed: ${e.message}")
+                            false
+                        }
+                        appendLog("[DNS-CHECK] dnsOk=$dnsOk (google.com:80 via SOCKS5)")
+                        broadcastStep("dns_check", dnsOk,
+                            if (dnsOk) "DNS OK — hostname resolution working"
+                            else "DNS FAILED — hostname resolution may not work through tunnel")
+                    }
+                }
+
+                val bytes   = tunInterface?.let { readInterfaceBytes(it) }
+                val curRx   = bytes?.first  ?: lastRx
+                val curTx   = bytes?.second ?: lastTx
+                val rxDelta = maxOf(0L, curRx - lastRx)
+                val txDelta = maxOf(0L, curTx - lastTx)
+                lastRx = curRx
+                lastTx = curTx
+
+                // Traffic stall detection
+                if (rxDelta == 0L && txDelta == 0L) {
+                    noTrafficIterations++
+                    if (noTrafficIterations % 10 == 0) {
+                        val stallSec = noTrafficIterations * METRICS_INTERVAL_MS / 1000
+                        appendLog("[STALL#$iteration] No TUN traffic for ${stallSec}s rx_total=$curRx tx_total=$curTx tun=${tunInterface ?: "?"}")
+                        sendBroadcast(Intent(BROADCAST_TRAFFIC_STALL).apply {
+                            setPackage(packageName)
+                            putExtra("stall_seconds", stallSec)
+                            putExtra("rx_total", curRx)
+                            putExtra("tx_total", curTx)
+                        })
+                        broadcastStep("traffic_stall", false,
+                            "No TUN traffic for ${stallSec}s — apps may have no internet")
+                    }
+                } else {
+                    if (noTrafficIterations >= 10) {
+                        val recoveredSec = noTrafficIterations * METRICS_INTERVAL_MS / 1000
+                        appendLog("[STALL-RECOVERED#$iteration] Traffic resumed after ${recoveredSec}s stall")
+                    }
+                    noTrafficIterations = 0
+                }
+
+                // Log every 5 iterations or when there's traffic
+                if (iteration % 5 == 0 || rxDelta > 0 || txDelta > 0) {
+                    appendLog("[METRICS#$iteration] TUN iface=${tunInterface ?: "?"} rx_total=$curRx tx_total=$curTx rx_delta=$rxDelta tx_delta=$txDelta stall=${noTrafficIterations * 3}s")
+                }
+
+                publishMetrics(tunInterface, rxDelta, txDelta, true)
+            }
+        }
+    }
+
+    // ── Process watchdog ──────────────────────────────────────────────────────
+
+    private fun startWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            while (isActive) {
+                delay(3_000L)
+                if (tearingDown.get()) break
+                // REAL SSH sessions never spawn xrayProcess (see establishTunnel) — the
+                // SSH bridge's own connection state is the correct liveness signal there.
+                val xAlive = realSshTunnel?.let { it.isConnected() } ?: (xrayProcess?.isAlive == true)
+                val tAlive = tun2socksPid?.let { nativeTun2socksExitCode(it) == -2 } == true
+                if (!xAlive || !tAlive) {
+                    if (tearingDown.get()) break   // teardown already killing them
+                    val t2sLog  = readTun2socksLog()
+                    val logTail = readLogTail(20)
+                    val backend = if (realSshTunnel != null) "ssh" else "xray"
+                    val msg = "Process died ($backend=$xAlive tun2socks=$tAlive)\nt2s output:\n$t2sLog\nxray log:\n$logTail"
+                    Log.e(TAG, msg)
+                    broadcastError(msg)
+                    tearDownTunnel("watchdog-process-died")
+                    break
+                }
+            }
+        }
+    }
+
+    // ── tun2socks log tail ────────────────────────────────────────────────────
+
+    private suspend fun tailTun2socksLog() {
+        val logFile = File(filesDir, TUN2SOCKS_LOG_FILE)
+        var offset = 0L
+        while (scope.isActive) {
+            delay(500L)
+            runCatching {
+                if (!logFile.exists() || logFile.length() <= offset) return@runCatching
+                RandomAccessFile(logFile, "r").use { raf ->
+                    raf.seek(offset)
+                    val buf = ByteArray((logFile.length() - offset).coerceAtMost(4096).toInt())
+                    val read = raf.read(buf)
+                    if (read > 0) {
+                        offset += read
+                        val text = String(buf, 0, read)
+                        text.lines().filter { it.isNotBlank() }.forEach { line ->
+                            Log.d("tun2socks", line)
+                            appendLog("[t2s] $line")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun readTun2socksLog(): String {
+        return runCatching {
+            val f = File(filesDir, TUN2SOCKS_LOG_FILE)
+            if (!f.exists()) return "(no tun2socks.log)"
+            f.readLines().takeLast(40).joinToString("\n").ifEmpty { "(empty)" }
+        }.getOrElse { "(unreadable)" }
+    }
+
+    // ── Config test ───────────────────────────────────────────────────────────
+
+    private data class TestResult(val passed: Boolean, val output: String, val firstError: String)
+
+    private suspend fun runConfigTest(xrayBin: File, configFile: File): TestResult {
+        return try {
+            val proc = ProcessBuilder(
+                xrayBin.absolutePath, "run", "-test", "-c", configFile.absolutePath
+            ).apply {
+                environment()["XRAY_LOCATION_ASSET"] = filesDir.absolutePath
+                redirectErrorStream(true)
+                directory(filesDir)
+            }.start()
+
+            val outputDeferred = scope.async(Dispatchers.IO) {
+                proc.inputStream.bufferedReader().readText()
+            }
+
+            val exitCode = withContext(Dispatchers.IO) {
+                val deadline = System.currentTimeMillis() + 5_000L
+                while (proc.isAlive && System.currentTimeMillis() < deadline) delay(100L)
+                if (proc.isAlive) { proc.destroyForcibly(); null } else proc.exitValue()
+            }
+
+            val output = outputDeferred.await()
+            appendLog("[CONFIG TEST exit=$exitCode]\n$output")
+
+            when {
+                exitCode == null -> TestResult(false, "(timed out)", "Config test timed out")
+                exitCode == 0    -> TestResult(true, output, "")
+                else             -> {
+                    // "Job was cancelled" is Xray's generic context-cancellation output —
+                    // it masks the real error. Collect all diagnostic lines:
+                    // 1. Lines containing error/fail/invalid/cancel keywords
+                    // 2. Last 8 non-blank lines (where Xray prints the root cause)
+                    val keywords = setOf("error", "fail", "invalid", "cancel", "reject", "panic")
+                    val errorLines = output.lines().filter { line ->
+                        val l = line.lowercase()
+                        line.isNotBlank() && keywords.any { l.contains(it) }
+                    }
+                    val tailLines = output.lines().filter { it.isNotBlank() }.takeLast(8)
+                    val combined  = (errorLines + tailLines).distinct()
+                    val summary   = combined.joinToString(" | ").take(400)
+                        .ifEmpty { "Config invalid (exit=$exitCode)" }
+                    TestResult(false, output, summary)
+                }
+            }
+        } catch (e: Exception) {
+            appendLog("[CONFIG TEST EXCEPTION] ${e.message}")
+            TestResult(false, e.message ?: "", e.message ?: "Config test failed")
+        }
+    }
+
+    // ── Teardown ──────────────────────────────────────────────────────────────
+
+    // Extracts the OS pid from a java.lang.Process via reflection (the field
+    // exists on Android's UNIXProcess/ProcessImpl on every API level we ship).
+    private fun processPid(p: Process?): Int {
+        if (p == null) return -1
+        return runCatching {
+            val f = p.javaClass.getDeclaredField("pid")
+            f.isAccessible = true
+            f.getInt(p)
+        }.getOrElse { -1 }
+    }
+
+    // PID file lets a NEW service instance (after HyperOS killed this one)
+    // find and kill processes the dead instance spawned.
+    private fun writePidFile() {
+        runCatching {
+            File(filesDir, PID_FILE).writeText(
+                "xray=${processPid(xrayProcess)}\ntun2socks=${tun2socksPid ?: -1}\n")
+        }
+    }
+
+    private fun clearPidFile() { runCatching { File(filesDir, PID_FILE).delete() } }
+
+    // True when /proc/<pid>/cmdline identifies one of OUR spawned binaries —
+    // guards against killing an unrelated process on a recycled pid.
+    private fun isOurVpnProcess(pid: Int): Boolean {
+        if (pid <= 0) return false
+        return runCatching {
+            // argv entries are NUL-separated; argv[0] is the binary path
+            val argv0 = File("/proc/$pid/cmdline").readText().substringBefore('\u0000')
+            argv0.endsWith("libxray.so") || argv0.endsWith("libtun2socks.so")
+        }.getOrDefault(false)
+    }
+
+    private fun killPidIfOurs(pid: Int, label: String) {
+        if (!isOurVpnProcess(pid)) return
+        appendLog("[CLEANUP] killing leftover $label pid=$pid")
+        runCatching { android.os.Process.killProcess(pid) }   // SIGKILL, same-UID only
+    }
+
+    // Scans /proc for orphaned libxray.so / libtun2socks.so processes that no
+    // pid bookkeeping knows about (app process was killed and restarted). Only
+    // same-UID processes are visible/killable, so this can never touch other apps.
+    private fun sweepOrphanVpnProcesses(reason: String) {
+        val myPid = android.os.Process.myPid()
+        var killed = 0
+        File("/proc").listFiles()?.forEach { dir ->
+            val pid = dir.name.toIntOrNull() ?: return@forEach
+            if (pid == myPid) return@forEach
+            if (isOurVpnProcess(pid)) {
+                runCatching { android.os.Process.killProcess(pid) }
+                killed++
+                appendLog("[SWEEP:$reason] killed orphan vpn process pid=$pid")
+            }
+        }
+        if (killed > 0) Log.i(TAG, "REALGRAM_ORPHAN_SWEEP reason=$reason killed=$killed")
+    }
+
+    private fun killStaleProcesses() {
+        xrayProcess?.let { it.destroyForcibly(); appendLog("[CLEANUP] killed stale xray") }
+        xrayProcess = null
+        tun2socksPid?.let { nativeStopTun2socks(it); appendLog("[CLEANUP] killed stale tun2socks pid=$it") }
+        tun2socksPid = null
+        runCatching { tunFd?.close() }
+        tunFd = null
+        // Kill children recorded by a previous (dead) service instance.
+        runCatching {
+            File(filesDir, PID_FILE).takeIf { it.exists() }?.readLines()?.forEach { line ->
+                val pid = line.substringAfter('=').trim().toIntOrNull() ?: return@forEach
+                killPidIfOurs(pid, line.substringBefore('='))
+            }
+        }
+        clearPidFile()
+        sweepOrphanVpnProcesses("pre-start")
+    }
+
+    // Blocks up to timeoutMs while cond() stays true. Returns false on timeout.
+    private fun waitUntilGone(timeoutMs: Long, cond: () -> Boolean): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (!cond()) return true
+            Thread.sleep(50)
+        }
+        return !cond()
+    }
+
+    internal fun tearDownTunnel(reason: String = "unspecified", stopService: Boolean = true) {
+        if (stopService) {
+            // Clear the desired connection BEFORE the idempotency guard: a user stop
+            // must also win while a handover cleanup is already in progress.
+            desiredConfigJson = null
+            stopNetworkMonitor()
+            handoverJob?.cancel()
+        }
+        if (!tearingDown.compareAndSet(false, true)) {
+            appendLog("[DISCONNECT] already in progress — ignoring duplicate ($reason)")
+            return
+        }
+        Log.i(TAG, "REALGRAM_DISCONNECT_START reason=$reason")
+        appendLog("[DISCONNECT_START] reason=$reason xrayPid=${processPid(xrayProcess)} t2sPid=${tun2socksPid ?: -1}")
+
+        // 0. Cancel an in-flight connect so it can't resurrect processes mid-teardown.
+        runCatching { connectJob?.cancel() }
+        connectJob = null
+        runCatching { probeRecheckJob?.cancel() }
+        probeRecheckJob = null
+        metricsJob?.cancel()
+        metricsJob = null
+        watchdogJob?.cancel()
+        watchdogJob = null
+        tunnelLogJob?.cancel()
+        tunnelLogJob = null
+
+        // 1. Stop tun2socks FIRST — it holds the TUN fd; while it lives the
+        //    kernel keeps the tun device (and the system VPN state) alive.
+        val t2sPid = tun2socksPid
+        if (t2sPid != null) {
+            nativeStopTun2socks(t2sPid)
+            val gone = waitUntilGone(1_500) { nativeTun2socksExitCode(t2sPid) == -2 }
+            if (!gone) {
+                appendLog("[DISCONNECT] tun2socks pid=$t2sPid survived SIGTERM+SIGKILL — direct killProcess")
+                runCatching { android.os.Process.killProcess(t2sPid) }
+            }
+        }
+        tun2socksPid = null
+
+        // 2. Close our copy of the TUN fd.
+        runCatching { tunFd?.close() }
+        tunFd = null
+        Log.i(TAG, "REALGRAM_TUN_CLOSED")
+        appendLog("[TUN_CLOSED]")
+
+        // 2b. Tear down the REAL SSH bridge/session, if that was this session's
+        // transport. No-op (realSshTunnel stays null) for the normal Xray path.
+        runCatching { realSshTunnel?.disconnect() }
+        realSshTunnel = null
+
+        // 3. Kill Xray and confirm it actually died.
+        val xp = xrayProcess
+        if (xp != null) {
+            val xPid = processPid(xp)
+            runCatching { xp.destroy() }                       // SIGTERM — clean exit
+            val exitedClean = waitUntilGone(700) { xp.isAlive }
+            if (!exitedClean) {
+                runCatching { xp.destroyForcibly() }           // SIGKILL
+                val exitedForced = waitUntilGone(1_300) { xp.isAlive }
+                if (!exitedForced && xPid > 0) {
+                    appendLog("[DISCONNECT] xray pid=$xPid survived destroyForcibly — direct killProcess")
+                    runCatching { android.os.Process.killProcess(xPid) }
+                }
+            }
+        }
+        xrayProcess = null
+        Log.i(TAG, "REALGRAM_XRAY_STOPPED")
+        appendLog("[XRAY_STOPPED]")
+
+        // 4. Sweep any orphans this bookkeeping missed (previous app process).
+        sweepOrphanVpnProcesses("teardown")
+        clearPidFile()
+
+        // 5. Tell the app, drop foreground, stop.
+        // Detect if network type changed during the session.
+        val currentNetwork = detectNetworkType()
+        if (currentNetwork != connectNetworkType && connectNetworkType != "unknown" && currentNetwork != "unknown") {
+            networkSwitched = true
+            appendLog("[DISCONNECT] network changed: $connectNetworkType → $currentNetwork")
+        }
+        lastNetworkSwitched = networkSwitched
+        if (stopService || desiredConfigJson == null) {
+            sendBroadcast(Intent(BROADCAST_DISCONNECTED).apply {
+                setPackage(packageName)
+                putExtra("network_switched", networkSwitched)
+            })
+            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+            Log.i(TAG, "REALGRAM_VPN_SERVICE_STOPPED")
+            appendLog("[VPN_SERVICE_STOPPED]")
+            runCatching { stopSelf() }
+        }
+
+        Log.i(TAG, "REALGRAM_DISCONNECT_COMPLETE reason=$reason")
+        appendLog("[DISCONNECT_COMPLETE] reason=$reason")
+        tearingDown.set(false)
+    }
+
+    // ── Broadcast helpers ─────────────────────────────────────────────────────
+
+    private fun startNetworkMonitor() {
+        if (networkMonitorRegistered) return
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        handoverState.start()
+        networkMonitorRegistered = true
+        try {
+            // A request for the best physical upstream excludes our own VPN and
+            // avoids reacting to every concurrently available Wi-Fi/mobile network.
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .build()
+            cm.requestNetwork(request, networkCallback)
+        } catch (e: Exception) {
+            networkMonitorRegistered = false
+            handoverState.stop()
+            appendLog("[NETWORK] monitor unavailable: ${e.message}")
+        }
+    }
+
+    private fun stopNetworkMonitor() {
+        handoverState.stop()
+        upstreamNetwork = null
+        if (!networkMonitorRegistered) return
+        networkMonitorRegistered = false
+        runCatching {
+            (getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager)
+                .unregisterNetworkCallback(networkCallback)
+        }
+    }
+
+    private fun scheduleNetworkRecovery(network: Network, token: Long) {
+        handoverJob?.cancel()
+        handoverJob = scope.launch {
+            delay(1_000L)
+            handoverMutex.withLock {
+                if (!handoverState.isCurrent(token, network.networkHandle)) return@withLock
+                val config = desiredConfigJson ?: return@withLock
+                val emergency = desiredEmergencyMode
+                appendLog("[NETWORK] physical upstream changed — rebuilding tunnel")
+                broadcastStep("network_handover", true, "Restoring connection after network change")
+                connectJob?.cancelAndJoin()
+                // Cleanup must finish even if another upstream arrives during it.
+                // Its replacement job waits for this mutex before starting anything.
+                withContext(NonCancellable) { tearDownTunnel("network-handover", stopService = false) }
+                currentCoroutineContext().ensureActive()
+                if (desiredConfigJson != config || !handoverState.isCurrent(token, network.networkHandle)) return@withLock
+                networkSwitched = true
+                lastNetworkSwitched = true
+                connectJob = scope.launch { establishTunnel(config, emergency, handover = true) }
+            }
+        }
+    }
+
+    // Scans the Xray log to classify the transport failure category.
+    // Categories map to admin failure_category field and help diagnose server-side errors.
+    private fun classifyFailure(logTail: String): String {
+        val log = logTail.lowercase()
+        return when {
+            log.contains("failed to read client hello") ||
+            log.contains("clienthello")                  -> FAIL_REALITY_CLIENTHELLO
+            log.contains("websocket protocol") ||
+            log.contains("upgrade header") ||
+            log.contains("not using the websocket")      -> FAIL_WS_UPGRADE
+            log.contains("validate path") ||
+            log.contains("path mismatch")                -> FAIL_XHTTP_PATH_MISMATCH
+            log.contains("dns") &&
+            (log.contains("failed") || log.contains("timeout")) -> FAIL_DNS_FAILED
+            log.contains("timeout") ||
+            log.contains("i/o timeout") ||
+            log.contains("connection timed out")         -> FAIL_SOCKS_PROBE_TIMEOUT
+            else                                         -> FAIL_NO_INTERNET
+        }
+    }
+
+    private fun broadcastError(msg: String, failureCategory: String = FAIL_NO_INTERNET) {
+        sendBroadcast(Intent(BROADCAST_DISCONNECTED).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_ERROR, msg)
+            putExtra("failure_category", failureCategory)
+        })
+    }
+
+    /** Detect the active network transport: "wifi", "mobile", or "unknown". */
+    private fun detectNetworkType(): String {
+        val cm   = getSystemService(CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return "unknown"
+        val net  = cm.activeNetwork ?: return "unknown"
+        val caps = cm.getNetworkCapabilities(net) ?: return "unknown"
+        return when {
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)     -> "wifi"
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "mobile"
+            else -> "unknown"
+        }
+    }
+
+    private fun broadcastStep(step: String, ok: Boolean, msg: String) {
+        sendBroadcast(Intent(BROADCAST_STEP).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_STEP, step)
+            putExtra(EXTRA_STEP_OK, ok)
+            putExtra(EXTRA_STEP_MSG, msg)
+        })
+        Log.i(TAG, "[STEP] $step=${if (ok) "OK" else "FAIL"} — $msg")
+    }
+
+    private fun broadcastRouteDiagnostics(tunInterface: String?, mtu: Int, emergency: Boolean) {
+        val cm     = getSystemService(ConnectivityManager::class.java)
+        val caps   = cm?.getNetworkCapabilities(cm.activeNetwork)
+        val transport = when {
+            caps == null -> "unknown"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "mobile"
+            else -> "other"
+        }
+        val routes = "0.0.0.0/0, ::/0"
+        val dns = if (emergency) "1.1.1.1" else "1.1.1.1,8.8.8.8"
+        broadcastStep("route_diag", true,
+            "iface=${tunInterface ?: "?"} mtu=$mtu routes=$routes dns=$dns net=$transport emergency=$emergency")
+        appendLog("[ROUTE_DIAG] iface=${tunInterface ?: "?"} mtu=$mtu routes=$routes dns=$dns net=$transport")
+    }
+
+    private fun publishMetrics(tunInterface: String?, rxDelta: Long, txDelta: Long, probeOk: Boolean) {
+        sendBroadcast(Intent(BROADCAST_METRICS).apply {
+            setPackage(packageName)
+            putExtra("tunInterface", tunInterface ?: "unknown")
+            putExtra("tunRxDelta",   rxDelta)
+            putExtra("tunTxDelta",   txDelta)
+            putExtra("probeOk",      probeOk)
+        })
+    }
+
+    // ── Interface helpers ─────────────────────────────────────────────────────
+
+    private fun findTunInterfaceName(): String? {
+        return runCatching {
+            NetworkInterface.getNetworkInterfaces()?.toList()
+                ?.firstOrNull { iface ->
+                    val n = iface.name.lowercase()
+                    iface.isUp && (n.startsWith("tun") || n.startsWith("ppp"))
+                }?.name
+        }.getOrNull()
+    }
+
+    // Confirms addDisallowedApplication() is actually excluding this app's own traffic
+    // from the tunnel, rather than just trusting that the setup call didn't throw.
+    // Fires a plain HttpURLConnection request (system default route, NOT SOCKS5, NOT
+    // bound to the VPN network via ConnectivityManager) and diffs the TUN interface's
+    // /proc/net/dev counters around it. If exclusion works, this request never touches
+    // the TUN device and the counters barely move. If exclusion silently failed on this
+    // device/ROM, the request gets caught by the tunnel's 0.0.0.0/0 route and the
+    // counters jump by roughly the request+response size — that's the self-loop behind
+    // the "phone gets hot on VPN connect" + Profile-screen-jam reports (khabat-realgram-
+    // v105-vpn-heat-profile-jam, TASK_SPLIT A→B(188)/(189)).
+    private suspend fun verifySelfExclusion(tunInterface: String?) {
+        if (tunInterface == null) {
+            appendLog("[SELF-EXCL] skipped — no TUN interface name resolved")
+            return
+        }
+        val before = readInterfaceBytes(tunInterface)
+        if (before == null) {
+            appendLog("[SELF-EXCL] skipped — could not read /proc/net/dev for $tunInterface")
+            return
+        }
+
+        val probeOk = runCatching {
+            withContext(Dispatchers.IO) {
+                val conn = URL("https://1.1.1.1/cdn-cgi/trace").openConnection() as HttpURLConnection
+                conn.connectTimeout = 5_000
+                conn.readTimeout = 5_000
+                conn.setRequestProperty("User-Agent", "Realgram/1.0")
+                try {
+                    val code = conn.responseCode
+                    conn.inputStream.bufferedReader().readText()
+                    code in 200..299
+                } finally {
+                    conn.disconnect()
+                }
+            }
+        }
+
+        val after = readInterfaceBytes(tunInterface)
+        if (after == null) {
+            appendLog("[SELF-EXCL] probe reqOk=${probeOk.getOrDefault(false)} but could not re-read $tunInterface counters after")
+            return
+        }
+
+        val rxDelta = after.first - before.first
+        val txDelta = after.second - before.second
+        // A few hundred bytes of noise (ARP/router chatter) is normal; a genuine
+        // self-loop shows up as a clear jump matching a full HTTPS round trip.
+        val excluded = rxDelta < 2_000 && txDelta < 2_000
+        appendLog("[SELF-EXCL] addDisallowedApplication verification: reqOk=${probeOk.getOrDefault(false)} " +
+            "tunDelta rx=$rxDelta tx=$txDelta -> " +
+            if (excluded) "EXCLUDED (working as intended)"
+            else "NOT EXCLUDED — this device's own traffic is looping through its own TUN")
+    }
+
+    private fun readInterfaceBytes(iface: String): Pair<Long, Long>? {
+        if (iface.isBlank()) return null
+        return runCatching {
+            File("/proc/net/dev").readLines()
+                .firstOrNull { it.trimStart().startsWith("$iface:") }
+                ?.let { line ->
+                    val fields = line.substringAfter(":").trim().split(Regex("\\s+"))
+                    // /proc/net/dev columns: rx_bytes rx_packets … tx_bytes tx_packets …
+                    // Index 0 = rx_bytes, index 8 = tx_bytes
+                    Pair(fields[0].toLong(), fields[8].toLong())
+                }
+        }.getOrNull()
+    }
+
+    // ── Log helpers ───────────────────────────────────────────────────────────
+
+    private fun appendLog(text: String) {
+        try {
+            FileWriter(File(filesDir, XRAY_LOG_FILE), true).use { it.write("$text\n") }
+        } catch (_: Exception) {}
+    }
+
+    fun readLogTail(lines: Int = 50): String {
+        return try {
+            val f = File(filesDir, XRAY_LOG_FILE)
+            if (!f.exists()) return "(no log)"
+            f.readLines().takeLast(lines).joinToString("\n").ifEmpty { "(empty)" }
+        } catch (_: Exception) { "(unreadable)" }
+    }
+
+    private fun streamToLog(process: Process, label: String) {
+        try {
+            process.inputStream.bufferedReader().forEachLine { line ->
+                Log.d("$TAG/$label", line)
+                appendLog("[$label] $line")
+            }
+        } catch (_: Exception) {}
+    }
+
+    // ── Binary helpers ────────────────────────────────────────────────────────
+
+    private fun resolveBinary(libName: String): File {
+        val nativeDir = File(applicationInfo.nativeLibraryDir)
+        val binFile   = File(nativeDir, libName)
+
+        val diag = "path=${binFile.absolutePath} exists=${binFile.exists()} " +
+                   "size=${binFile.length()}B canExecute=${binFile.canExecute()}"
+        appendLog("[BINARY] $diag")
+        Log.i(TAG, "Binary $libName: $diag")
+
+        if (!binFile.exists()) {
+            val contents = nativeDir.list()?.joinToString() ?: "dir missing"
+            throw Exception("Binary $libName not found.\nnativeDir contents: $contents")
+        }
+        if (!binFile.canExecute()) {
+            binFile.setExecutable(true, false)
+            if (!binFile.canExecute()) {
+                throw Exception("Binary $libName not executable at ${binFile.absolutePath}")
+            }
+            appendLog("[BINARY] $libName chmod succeeded")
+        }
+        return binFile
+    }
+
+    // Sends a SOCKS5 greeting and reads the server method selection response.
+    // Confirms Xray is actually serving SOCKS5, not just accepting TCP connections.
+    private suspend fun verifySocks5Handshake(port: Int): Boolean {
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                Socket().use { sock ->
+                    sock.connect(InetSocketAddress("127.0.0.1", port), 3_000)
+                    sock.soTimeout = 3_000
+                    // SOCKS5 greeting: VER=5, NMETHODS=1, METHOD=0x00 (no-auth)
+                    sock.getOutputStream().write(byteArrayOf(0x05, 0x01, 0x00))
+                    sock.getOutputStream().flush()
+                    val resp = ByteArray(2)
+                    val read = sock.getInputStream().read(resp)
+                    // Valid SOCKS5 response: VER=0x05, METHOD=0x00 (no-auth selected)
+                    read == 2 && resp[0] == 0x05.toByte() && resp[1] == 0x00.toByte()
+                }
+            }
+        }.onFailure { e -> appendLog("[SOCKS5-HANDSHAKE] failed: ${e.javaClass.simpleName}: ${e.message}") }
+         .getOrElse { false }
+    }
+
+    private suspend fun waitForPort(port: Int, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Socket().use { s -> s.connect(InetSocketAddress("127.0.0.1", port), 200) }
+                return true
+            } catch (_: Exception) {}
+            delay(300L)
+        }
+        return false
+    }
+}

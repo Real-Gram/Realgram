@@ -1,0 +1,28 @@
+# ── JS / Node ─────────────────────────────────────────────────────────────────
+node_modules/
+.metro-cache/
+*.jsbundle
+
+# ── Android generated / secret ────────────────────────────────────────────────
+android/app/debug.keystore
+android/app/release.keystore
+android/app/build/
+android/build/
+android/.gradle/
+android/gradle/wrapper/gradle-wrapper.jar
+android/local.properties
+# CMake / NDK build metadata (regenerated on every build)
+android/app/.cxx/
+
+# ── iOS generated ─────────────────────────────────────────────────────────────
+ios/Pods/
+ios/build/
+ios/DerivedData/
+ios/LibXray.xcframework/
+*.xcworkspace
+*.xcuserdata
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+.env
+.env.*
+*.log

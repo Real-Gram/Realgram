@@ -85,6 +85,7 @@ if (!INTERNAL_SECRET) {
   process.exit(1);
 }
 
+const sendPush = require('./push.js').configuredSender();
 const registry = new PresenceRegistry();
 let nextConnectionId = 1;
 
@@ -133,19 +134,27 @@ const internalHttpServer = http.createServer((req, res) => {
       res.writeHead(400).end();
       return;
     }
-    const { device_id, event } = parsed || {};
+    const { device_id, event, push_tokens } = parsed || {};
     if (!device_id || !event || typeof event !== 'object') {
       res.writeHead(400).end();
       return;
     }
     const connectionId = registry.connectionFor(device_id);
     const ws = connectionId ? connections.get(connectionId) : null;
-    if (!ws) {
-      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ delivered: false }));
-      return;
+    const delivered = !!ws && ws.readyState === ws.OPEN;
+    if (delivered) send(ws, event);
+    // A socket can remain connected while Android has suspended JavaScript.
+    // Always send the native push too; app/native handling deduplicates by call_id.
+    // Respond immediately so PHP never waits for external provider latency.
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ delivered }));
+    if (Array.isArray(push_tokens)) {
+      for (const token of push_tokens.slice(0, 1)) {
+        if (typeof token !== 'string' || token.length < 20 || token.length > 4096) continue;
+        sendPush(token, device_id, event).then(result => {
+          if (!result.sent) console.warn('[call-push]', result.reason);
+        }).catch(() => console.warn('[call-push] provider unavailable'));
+      }
     }
-    send(ws, event);
-    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ delivered: true }));
   });
 });
 
