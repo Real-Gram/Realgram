@@ -97,13 +97,20 @@ def main():
         raise RuntimeError(f"Download directory missing: {target_dir}")
     dest = target_dir / "RealGram-latest.apk"
     manifest = target_dir / "release.json"
-    if manifest.is_file():
-        current = json.loads(manifest.read_text())
+    mobile_manifest = target_dir / "version.json"
+    current_file = mobile_manifest if mobile_manifest.is_file() else manifest
+    if current_file.is_file():
+        current = json.loads(current_file.read_text())
         if int(current.get("versionCode", 0)) > args.version_code:
             raise RuntimeError("Refusing to downgrade installed release")
         if (int(current.get("versionCode", 0)) == args.version_code and
                 current.get("sha256") not in (None, sha)):
             raise RuntimeError("Different binary with existing versionCode")
+    versioned_apk = target_dir / f"RealGram-{args.version}.apk"
+    if versioned_apk.exists():
+        with versioned_apk.open("rb") as existing:
+            if hashlib.file_digest(existing, "sha256").hexdigest() != sha:
+                raise RuntimeError("Existing versioned APK differs from verified build")
     modified = [(page, edit_page(page.read_text(), args.version, fa))
                 for page, fa in pages]
     metadata = {
@@ -113,21 +120,30 @@ def main():
         "sha256": sha,
         "apkUrl": "https://realgram.no/download/RealGram-latest.apk",
     }
-    # Swap the binary first. After that the homepage and manifest are updated.
-    fd, staged = tempfile.mkstemp(prefix=".realgram-apk-", dir=target_dir)
-    try:
-        with os.fdopen(fd, "wb") as dst, apk.open("rb") as src:
-            shutil.copyfileobj(src, dst)
-            dst.flush()
-            os.fsync(dst.fileno())
-        os.chmod(staged, 0o644)
-        os.replace(staged, dest)
-    finally:
-        if os.path.exists(staged):
-            os.unlink(staged)
+    # Preserve versioned APKs, and atomically repoint the stable URL.
+    if not versioned_apk.exists():
+        fd, staged = tempfile.mkstemp(prefix=".realgram-apk-", dir=target_dir)
+        try:
+            with os.fdopen(fd, "wb") as dst, apk.open("rb") as src:
+                shutil.copyfileobj(src, dst)
+                dst.flush()
+                os.fsync(dst.fileno())
+            os.chmod(staged, 0o644)
+            os.replace(staged, versioned_apk)
+        finally:
+            if os.path.exists(staged):
+                os.unlink(staged)
+    staged_link = target_dir / ".RealGram-latest-next.apk"
+    if staged_link.exists() or staged_link.is_symlink():
+        staged_link.unlink()
+    staged_link.symlink_to(versioned_apk.name)
+    staged_link.replace(dest)
     for page, new in modified:
         atomic_bytes(page, new.encode("utf-8"))
-    atomic_bytes(manifest, (json.dumps(metadata, indent=2) + "\n").encode())
+    payload = (json.dumps(metadata, indent=2) + "\n").encode()
+    atomic_bytes(manifest, payload)
+    mobile_metadata = dict(metadata, apkUrlFallback="https://realgram.no/download/" + versioned_apk.name)
+    atomic_bytes(mobile_manifest, (json.dumps(mobile_metadata, indent=2) + "\n").encode())
     print(f"Published Realgram v{args.version}; sha256={sha}")
 
 
