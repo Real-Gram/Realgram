@@ -63,3 +63,18 @@ workflow; the workflow now explicitly installs platform-tools and Android 34.
 Android native compilation and device validation remain separate checks.
 The live website download links and version metadata now use realgram.no only,
 pointing to the verified 0.9.149 download. Other live SEO edits were preserved.
+
+## 20 October Android on-device preview
+
+The website offers a CI-built, debug-signed Android 0.9.150 preview (arm64)
+from the canonical Realgram repository. Its Android package com.realgram is
+different from the installed production 0.9.149 package. It is a separate test
+installation, not an upgrade, and FCM background calling remains unavailable.
+The signed production APK remains v0.9.149 until the original release-signing
+secrets are migrated to this repository and the backend is ready.
+
+The site Android production button now uses the permanent local URL
+/download/RealGram-latest.apk and reads /download/version.json for the
+current signed release. The independent preview button points directly at a
+checksum-verified APK on realgram.no. No user needs GitHub login or a ZIP to
+install either Android build.
