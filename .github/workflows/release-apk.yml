@@ -82,20 +82,38 @@ jobs:
           echo "::add-mask::$package_id"
           echo "REALGRAM_ANDROID_APPLICATION_ID=$package_id" >> "$GITHUB_ENV"
 
-      - name: Configure incoming-call push when Firebase project is available
+      - name: Configure required Firebase incoming-call push
         env:
           REALGRAM_GOOGLE_SERVICES_JSON: ${{ secrets.REALGRAM_GOOGLE_SERVICES_JSON }}
         run: |
           python3 - <<'PYCONFIG'
           import os, json, pathlib
           raw = os.environ.get('REALGRAM_GOOGLE_SERVICES_JSON', '')
-          if raw:
-              config = json.loads(raw)
-              assert any(c.get('client_info', {}).get('android_client_info', {}).get('package_name') == os.environ.get('REALGRAM_ANDROID_APPLICATION_ID', 'com.realgram') for c in config.get('client', [])), 'Firebase package must be com.realgram'
-              pathlib.Path('mobile-app/android/app/google-services.json').write_text(raw)
-          else:
-              print('::notice::Firebase project config is absent; background call push is unavailable in this build.')
+          if not raw:
+              raise SystemExit('::error::Firebase client configuration is REQUIRED for Android calling release')
+          config = json.loads(raw)
+          expected = os.environ.get('REALGRAM_ANDROID_APPLICATION_ID', '')
+          clients = config.get('client', [])
+          matched = [c for c in clients if c.get('client_info', {}).get('android_client_info', {}).get('package_name') == expected]
+          if not expected or not matched:
+              raise SystemExit('::error::Firebase Android package must exactly match the installed release identity')
+          if not config.get('project_info', {}).get('project_id'):
+              raise SystemExit('::error::Missing Firebase project ID')
+          pathlib.Path('mobile-app/android/app/google-services.json').write_text(raw)
+          print('Firebase Android client matched release identity; no credentials printed')
           PYCONFIG
+
+      - name: Require background-calling production readiness
+        env:
+          REALGRAM_BACKGROUND_CALL_E2E_VERIFIED: ${{ secrets.REALGRAM_BACKGROUND_CALL_E2E_VERIFIED }}
+        run: |
+          # Signed releases must not ship until real FCM pushes and
+          # lock-screen accept/decline work on two physical Android phones.
+          if [ "$REALGRAM_BACKGROUND_CALL_E2E_VERIFIED" != "yes" ]; then
+            echo "::error::Background calling needs verified two-phone FCM/relay tests before any release APK"
+            exit 1
+          fi
+          python3 scripts/check-realgram-calling-backend.py
 
       - name: Prepare verified native executables
         run: python3 scripts/prepare-android-native.py
