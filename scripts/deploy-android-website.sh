@@ -35,6 +35,6 @@ ssh -i "$tmp/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKn
   "$target" python3 "$stage/deploy-android-site.py" \
   --web-root "$REALGRAM_DEPLOY_WEBROOT" \
   --apk "$stage/$(basename "$apk")" \
-  --version "$version" --version-code "$version_code" \
+  --download-only --version "$version" --version-code "$version_code" \
   --source-sha "$source_sha" --expected-sha "$sha"
 echo "Realgram website APK deployment completed"

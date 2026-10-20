@@ -444,11 +444,11 @@
 
 <script>
   // The server updates this manifest only after a verified, signed APK is in place.
-  fetch('/download/release.json', { cache: 'no-store' })
+  fetch('/download/version.json', { cache: 'no-store' })
     .then(response => response.ok ? response.json() : null)
     .then(release => {
       if (!release || !/^\d+\.\d+\.\d+$/.test(release.version)) return;
-      const element = document.querySelector('[data-realgram-download-version]');
+      const element = document.querySelector('a.platform-dl-btn[href$="/RealGram-latest.apk"] .platform-dl-version');
       if (element) element.textContent = document.documentElement.lang === 'fa'
         ? 'نسخه‌ی ' + release.version + ' · APK مستقیم'
         : 'v' + release.version + ' · direct APK';

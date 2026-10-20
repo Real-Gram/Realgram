@@ -73,6 +73,7 @@ def main():
     parser.add_argument("--version", required=True)
     parser.add_argument("--version-code", required=True, type=int)
     parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--download-only", action="store_true", help="Update downloads and metadata; do not modify website HTML")
     parser.add_argument("--expected-sha", required=True)
     args = parser.parse_args()
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
@@ -83,7 +84,7 @@ def main():
         parser.error("Invalid APK checksum")
     root = args.web_root.resolve(strict=True)
     apk = args.apk.resolve(strict=True)
-    pages = [(root / "index.html", False), (root / "fa/index.html", True)]
+    pages = [] if args.download_only else [(root / "index.html", False), (root / "fa/index.html", True)]
     for page, _ in pages:
         if not page.is_file():
             raise RuntimeError(f"Missing page: {page}")
