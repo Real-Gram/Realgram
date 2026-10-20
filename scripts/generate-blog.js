@@ -27,6 +27,7 @@ function get(url) {
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => {
+        if (res.statusCode !== 200) { reject(new Error('HTTP '+res.statusCode+' from '+url)); return; }
         try { resolve(JSON.parse(data)); }
         catch (e) { reject(new Error('bad JSON from ' + url + ': ' + e.message)); }
       });
@@ -67,6 +68,7 @@ function postTemplate(p, faSlug) {
     headline: p.title,
     description: p.excerpt || undefined,
     datePublished: p.published_at || undefined,
+    dateModified: p.updated_at || p.published_at || undefined,
     url,
     image: p.cover_image || undefined,
     author: { '@type': 'Organization', name: 'RealGram' },
@@ -255,6 +257,7 @@ function postTemplateFa(p) {
     headline: p.title,
     description: p.excerpt || undefined,
     datePublished: p.published_at || undefined,
+    dateModified: p.updated_at || p.published_at || undefined,
     url,
     image: p.cover_image || undefined,
     inLanguage: 'fa',
@@ -410,13 +413,17 @@ function buildSitemap(posts, postsFa) {
     loc: SITE_URL + '/blog/' + encodeURIComponent(p.slug) + '/',
     changefreq: 'monthly',
     priority: '0.6',
-    lastmod: isoDate(p.published_at),
+    lastmod: isoDate(p.updated_at || p.published_at),
   }))).concat((postsFa || []).map((p) => ({
     loc: SITE_URL + '/fa/blog/' + encodeURIComponent(p.slug) + '/',
     changefreq: 'monthly',
     priority: '0.6',
-    lastmod: isoDate(p.published_at),
+    lastmod: isoDate(p.updated_at || p.published_at),
   })));
+
+  for (const p of JSON.parse(fs.readFileSync(path.join(SITE_ROOT,'docs/seo-product-pages.json'),'utf8'))) {
+    for (const prefix of ['/', '/fa/']) urls.push({loc:SITE_URL+prefix+p.slug+'/',lastmod:'2026-10-20',changefreq:'monthly',priority:'0.8'});
+  }
 
   const body = urls.map((u) => (
     '  <url>\n'
@@ -435,15 +442,16 @@ function buildSitemap(posts, postsFa) {
 
 async function fetchFullPosts(locale) {
   const listResp = await get(API_BASE + '/posts?locale=' + encodeURIComponent(locale));
-  const listedPosts = (listResp && listResp.status && listResp.posts) || [];
+  if (!listResp || listResp.status !== 1 || !Array.isArray(listResp.posts) || !listResp.posts.length) throw new Error('Invalid/empty '+locale+' blog response; preserving existing pages');
+  const listedPosts = listResp.posts;
   const full = [];
   for (const p of listedPosts) {
     try {
       const detail = await get(API_BASE + '/posts/' + encodeURIComponent(p.slug));
-      full.push((detail && detail.status && detail.post) ? detail.post : p);
+      if (!detail || detail.status !== 1 || !detail.post || !detail.post.body_html) throw new Error('Missing full post body: '+p.slug);
+      full.push(detail.post);
     } catch (e) {
-      console.error('generate-blog: failed to fetch detail for ' + p.slug + ', using list data:', e.message);
-      full.push(p);
+      throw new Error('Preserving pages: detail fetch failed for '+p.slug+': '+e.message);
     }
   }
   return full;
@@ -462,6 +470,7 @@ async function main() {
   try {
     await generateBlogPages();
   } catch (e) {
+    process.exitCode = 1;
     console.error('generate-blog: blog-post generation failed, leaving blog pages/sitemap as last-generated:', e.message);
   }
 
@@ -548,7 +557,7 @@ async function generateBlogPages() {
   // Regenerate sitemap.xml.
   fs.writeFileSync(path.join(SITE_ROOT, 'sitemap.xml'), buildSitemap(fullPosts, fullPostsFa));
 
-  console.log('generate-blog: ' + fullPosts.length + ' en post(s), ' + fullPostsFa.length + ' fa post(s) -> blog/<slug>/, fa/blog/<slug>/, blog.html, fa/blog.html, sitemap.xml');
+  console.log(new Date().toISOString()+' generate-blog: ' + fullPosts.length + ' en post(s), ' + fullPostsFa.length + ' fa post(s) -> blog/<slug>/, fa/blog/<slug>/, blog.html, fa/blog.html, sitemap.xml');
 }
 
 const FA_DIGITS = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];

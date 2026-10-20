@@ -66,84 +66,34 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hairli
 }
 </style>
 </head>
-<body>
-<div class="wrap">
-  <header class="hero">
-    <span class="eyebrow">Internt — ikke indeksert</span>
-    <h1>SEO-status for realgram.no</h1>
-    <p class="lede">Hvor realgram.no står i Google på 12 søkeord: merkevaren, og søkene nye brukere faktisk skriver når de leter etter det RealGram tilbyr — VPN, Shahnameh, Hakim AI og alt-i-én-appen. På engelsk og persisk.</p>
-    <div class="meta">
-      <span>Kilde: Google Search Console</span>
-      <span>Oppdatert 23. september 2026</span>
-    </div>
-  </header>
-
-  <section>
-    <div class="head">
-      <h2>Rangering i Google — start, nå og mål</h2>
-      <p>Snittplassering per måned (lavere tall = høyere opp). Start er juli 2026 (første måned med data), nå er september, målet gjelder starten av november. «Ikke rangert» betyr at realgram.no ikke vises i Google for søket i det hele tatt.</p>
-    </div>
-    <div class="card">
-      <div class="tbl">
-        <table>
-          <thead><tr><th>Søkeord</th><th>Start</th><th>Nå (sep.)</th><th>Endring</th><th>Mål (nov.)</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
-      <p class="note">Plasseringen er et månedssnitt. Søk med få visninger (under ca. 20) svinger mye og bør leses som retning, ikke eksakte tall.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="head"><h2>Kort oppsummert</h2></div>
-    <div class="card">
-      <ul class="list">
-        <li><strong>Merkevaren fungerer:</strong> «realgram» har gått fra #4,8 i juli til #2 i september, med 75 visninger og 5 klikk. De som kjenner navnet, finner frem.</li>
-        <li><strong>Ingen nye brukere fra søk ennå:</strong> realgram.no vises ikke for noen av søkene folk bruker når de ikke kjenner navnet — verken «free vpn», «فیلترشکن» eller «shahnameh game». All synlighet i dag kommer fra navnesøk.</li>
-        <li><strong>Raskest å vinne:</strong> Shahnameh-søkene («shahnameh game», «بازی شاهنامه») og alt-i-én-vinkelen har lite konkurranse — der kan en egen landingsside per del av appen gi synlighet på få uker.</li>
-        <li><strong>Tyngst:</strong> VPN- og «فیلترشکن»-søkene er blant de mest konkurrerte i verden. Målet her er å bli synlig (topp 20–30), ikke å slå de store VPN-merkene.</li>
-        <li><strong>Neste steg:</strong> egne sider med persisk tekst for Freedom (VPN), Shahnameh og Hakim AI, i stedet for at alt ligger på forsiden.</li>
-      </ul>
-    </div>
-  </section>
-
-  <footer>Sist oppdatert 23. september 2026 · Tall fra Google Search Console (realgram.no) · Intern side, vises ikke i søk</footer>
-</div>
-
-<script>
-// Google Search Console (sc-domain:realgram.no), hentet 23.09.2026. start/now = snittplassering, *Impr = visninger den måneden.
-// now = null betyr ingen visninger i september.
-const rows = [
-  { kw: 'realgram', grp: 'Merkevare', start: 4.8, startImpr: 15, now: 2.0, nowImpr: 75, goal: 'Hold #1' },
-  { kw: 'real gram', grp: 'Merkevare', start: 3.6, startImpr: 5, now: 9.5, nowImpr: 18, goal: 'Topp 3' },
-  { kw: 'gram vpn', grp: 'Freedom (VPN)', start: 8.0, startImpr: 1, now: 8.7, nowImpr: 3, goal: 'Topp 5' },
-  { kw: 'حقوق دیجیتال', grp: 'Persisk · digitale rettigheter', start: 17.0, startImpr: 1, now: 27.0, nowImpr: 1, goal: 'Topp 10' },
-  { kw: 'free vpn app android', grp: 'Freedom (VPN)', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 30' },
-  { kw: 'vpn for iran', grp: 'Freedom (VPN)', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 20' },
-  { kw: 'فیلترشکن رایگان', grp: 'Persisk · VPN', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 30' },
-  { kw: 'فیلترشکن برای اندروید', grp: 'Persisk · VPN', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 30' },
-  { kw: 'shahnameh game', grp: 'Shahnameh', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 10' },
-  { kw: 'بازی شاهنامه', grp: 'Persisk · Shahnameh', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 10' },
-  { kw: 'هوش مصنوعی فارسی', grp: 'Persisk · Hakim AI', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 20' },
-  { kw: 'super app vpn wallet messenger', grp: 'Hele appen', start: null, startImpr: 0, now: null, nowImpr: 0, goal: 'Topp 10' },
-];
-const fmt = (p) => p === null ? 'Ikke rangert' : '#' + p.toFixed(1).replace('.', ',');
-function trend(r) {
-  if (r.start === null && r.now === null) return '<span class="trend flat">—</span>';
-  if (r.now === null) return '<span class="trend down">Borte</span>';
-  if (r.start === null) return '<span class="trend up">Ny</span>';
-  const d = r.start - r.now;
-  if (Math.abs(d) < 1) return '<span class="trend flat">Uendret</span>';
-  const v = Math.abs(d).toFixed(1).replace('.', ',');
-  return d > 0 ? '<span class="trend up">▲ ' + v + '</span>' : '<span class="trend down">▼ ' + v + '</span>';
-}
-const cell = (p, impr, lbl) => fmt(p) + (p === null ? '' : '<span class="impr">' + (lbl ? lbl + ' · ' : '') + impr + ' visn.</span>');
-document.getElementById('rows').innerHTML = rows.map((r) =>
-  '<tr><td class="kw"><bdi>' + r.kw + '</bdi><span class="grp">' + r.grp + '</span></td>' +
-  '<td class="num">' + cell(r.start, r.startImpr, 'jul.') + '</td>' +
-  '<td class="num">' + cell(r.now, r.nowImpr, '') + '</td>' +
-  '<td>' + trend(r) + '</td><td class="goal">' + r.goal + '</td></tr>'
-).join('');
-</script>
-</body>
-</html>
+<body><div class="wrap">
+<header class="hero"><span class="eyebrow">Internt — ikke indeksert</span><h1>SEO-status for realgram.no</h1>
+<p class="lede">Oppdatert med direkte uttrekk fra Google Search Console. Synligheten har økt litt, men klikkene har falt. Nye sider og målefeil er fulgt opp nedenfor.</p>
+<div class="meta"><span>Oppdatert 20. oktober 2026</span><span>Dataperiode: 20. september–17. oktober</span><span><a href="https://admin.realgram.no/?page=seoranks">Åpne løpende målinger i admin</a></span></div></header>
+<section><div class="head"><h2>Siste 28 dager mot de foregående 28 dagene</h2><p>Hele eiendommen sc-domain:realgram.no, inkludert anonymiserte søk. Tallene er ikke begrenset til søkeordlisten.</p></div>
+<div class="card tbl"><table><thead><tr><th>Måling</th><th>23. aug.–19. sep.</th><th>20. sep.–17. okt.</th><th>Endring</th></tr></thead><tbody>
+<tr><td>Visninger</td><td>223</td><td>244</td><td>+9,4 %</td></tr>
+<tr><td>Klikk</td><td>16</td><td>5</td><td>−68,8 %</td></tr>
+<tr><td>Klikkrate</td><td>7,17 %</td><td>2,05 %</td><td>−5,12 prosentpoeng</td></tr>
+<tr><td>Gjennomsnittsposisjon</td><td>10,43</td><td>4,55</td><td>Bedre snitt; ulik søkemiks</td></tr>
+</tbody></table><p class="note">Dette er observerte Google-tall før dagens endringer. De dokumenterer ikke effekten av de nye sidene. Lavt volum gir store prosentvise utslag.</p></div></section>
+<section><div class="head"><h2>Søk Google faktisk rapporterer i denne perioden</h2><p>7 søk med tilgjengelige spørringsdata. Google skjuler enkelte søk; summen nedenfor blir derfor lavere enn 244 visninger.</p></div>
+<div class="card tbl"><table><thead><tr><th>Søk</th><th>Visninger</th><th>Klikk</th><th>Snittposisjon</th></tr></thead><tbody><tr><td class="kw"><bdi>realgram</bdi></td><td>121</td><td>5</td><td>#2,17</td></tr><tr><td class="kw"><bdi>real gram</bdi></td><td>17</td><td>0</td><td>#6,59</td></tr><tr><td class="kw"><bdi>setalink</bdi></td><td>8</td><td>0</td><td>#8,5</td></tr><tr><td class="kw"><bdi>gram vpn</bdi></td><td>4</td><td>0</td><td>#7,0</td></tr><tr><td class="kw"><bdi>livegram vpn</bdi></td><td>2</td><td>0</td><td>#9,5</td></tr><tr><td class="kw"><bdi>vpn gram</bdi></td><td>1</td><td>0</td><td>#10,0</td></tr><tr><td class="kw"><bdi>وایرگارد یعنی چی</bdi></td><td>1</td><td>0</td><td>#19,0</td></tr></tbody></table>
+<p class="note">Ingen rapportert spørringsrad betyr «ingen tilgjengelige søkedata», ikke et bevis på at siden er uindeksert eller utenfor topp 100.</p></div></section>
+<section><div class="head"><h2>Hva som holdt arbeidet tilbake</h2></div><div class="card"><ul class="list">
+<li><strong>Innholdet sto stille:</strong> Bloggjobben gjenskapte de samme 12 engelske og 12 persiske innleggene fra juli. Den publiserte ikke nytt redaksjonelt innhold av seg selv.</li>
+<li><strong>Viktige søk var utelatt:</strong> Den gamle synken lagret bare eksakte treff på den eksisterende mållisten. Reelle søk som «real gram» og «gram vpn» ble utelatt fra panelet.</li>
+<li><strong>Feil totalberegning:</strong> Oversikten summerte bare sporede søkeord og utelot øvrige søk og anonymiserte data.</li>
+<li><strong>Ufullstendige synker:</strong> Loggen hadde SQLite-feil 17., 18. og 20. oktober. Oppdateringer var ikke samlet i én transaksjon. Den underliggende årsaken til de tidligere I/O-feilene er ikke endelig fastslått.</li>
+<li><strong>Manglende landingssider:</strong> Freedom, Shahnameh og Hakim AI var hovedsakelig omtalt på forsiden. En eldre status fra september viste fortsatt planer og manglende data som «ikke rangert».</li>
+</ul></div></section>
+<section><div class="head"><h2>Utført 20. oktober</h2></div><div class="card"><ul class="list">
+<li>90 dager hentet fra Google. 37 søk med observerte målinger i perioden; de 63 opprinnelige målene er bevart. Daglige totaltall hentes separat for hele eiendommen.</li>
+<li>Synken bruker transaksjon, sideinndeling, persisk bokstavnormalisering og synlig feilstatus. To påfølgende kjøringer ga samme resultat uten doble GSC-rader; databasekontroll: OK.</li>
+<li>Seks produktsider: <a href="/freedom/">Freedom</a> / <a href="/fa/freedom/">فارسی</a>, <a href="/shahnameh/">Shahnameh</a> / <a href="/fa/shahnameh/">فارسی</a>, <a href="/hakim-ai/">Hakim AI</a> / <a href="/fa/hakim-ai/">فارسی</a>. Unike titler, beskrivelser, canonical og gjensidige språklenker.</li>
+<li>Ny guide: <a href="/blog/install-realgram-android-apk-guide/">installasjon og oppdatering av Android-appen</a> / <a href="/fa/blog/install-realgram-android-apk-guide-fa/">راهنمای فارسی</a>. Bloggen har nå 13 innlegg per språk.</li>
+<li>Forsidens tittel, beskrivelse og hovedoverskrift forklarer produktet tydeligere. Nye produktsider er lenket fra begge forsider. En udokumentert lovnad om satellittforbindelse er erstattet med konkret informasjon om nettverksavhengighet.</li>
+<li>Sitemap inneholder 38 unike adresser. Generatoren bevarer eksisterende innhold når API-et svarer feil eller tomt, og beholder de nye produktsidene i sitemap ved vanlige kjøringer.</li>
+</ul></div></section>
+<section><div class="head"><h2>Hva vi måler videre</h2></div><div class="card"><p>Følg visninger og klikk til de nye produktsidene, og om søk utover merkevaren begynner å vises. Bruk adminpanelet for daglig oppdaterte målinger. Denne siden er en datert status, ikke en automatisk oppdatert rangeringstabell.</p><p>Publisering og sitemap er verifisert. Google avgjør når sidene gjennomsøkes og indekseres; ingen ny rangering er dokumentert samme dag som publisering.</p></div></section>
+<footer>Datert status: 20. oktober 2026 · Kilde: Google Search Console · Intern oversikt med noindex</footer></div></body></html>
