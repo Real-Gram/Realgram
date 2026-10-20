@@ -1,0 +1,253 @@
+/**
+ * Hero catalog + ownership — Shahnameh's real hero/artifact/creature
+ * collection (`docs/realgram/TASK_SPLIT.md` A→B(125) roadmap, closing the
+ * data-mismatch flagged in A→B(135)/B→A(136)).
+ *
+ * `/api/catalog/heroes` used to serve 11 stale placeholder entries with no
+ * relation to the real economy (admin-CMS test content, only 1 of 11 slugs
+ * — 'rakhsh' — existed anywhere in the actual game). Rebuilt server-side
+ * (season2/data/heroes.json regenerated from heroes.js's own live
+ * COLLECTION array cross-verified against shahnameh-backend's
+ * HERO_CATALOG for cost/prereq consistency, both sources agreed exactly)
+ * to the 33 real, currently-purchasable heroes/artifacts. Same public,
+ * non-identity-gated endpoint — no route change, just correct data.
+ *
+ * Ownership/buy/upgrade need the telegram_id bridge (B->A(132)), same
+ * pattern as Clan join/apply and Earn.
+ */
+
+import { storage, syncGet } from '../storage/storage';
+
+const SHAHNAMEH_ORIGIN = 'https://shahnameh.setaei.com';
+const CATALOG_URL       = `${SHAHNAMEH_ORIGIN}/api/catalog/heroes`;
+const CACHE_KEY     = 'hero_catalog_v3'; // v3: adds category
+const CACHE_TTL_KEY = 'hero_catalog_ttl_v3';
+const CACHE_TTL_MS  = 6 * 3600 * 1_000; // static definition content — safe to cache for hours
+
+export interface HeroPrereq {
+  hero_id: string;
+  level:   number;
+}
+
+// 2026-07-29 (Khabat: "husk samme logikken mellom hero kortene, personer,
+// steder, fiender, spesiale"): the source catalog had no category field at
+// all until now — classified all 33 entries by reading name+description
+// (image_url folder paths turned out inconsistent, e.g. a mountain filed
+// under "heroes/") and added `category` server-side in
+// season2/data/heroes.json directly. "hero" covers named protagonists AND
+// ownable companions (e.g. Rakhsh) — the data has no separate "person"
+// bucket distinct from that.
+export type HeroCategory = 'hero' | 'place' | 'enemy' | 'special';
+
+export interface HeroCatalogEntry {
+  slug:                string;
+  name:                string;
+  rarity:              string; // 'Common' | 'Rare' | 'Epic' | 'Legend' | 'Mythic'
+  era:                 string; // e.g. 'Chapter 3'
+  category:            HeroCategory | '';
+  description:         string;
+  image_url:           string; // already absolutized against SHAHNAMEH_ORIGIN
+  cost:                number; // REAL to buy at level 1
+  zar_per_hour:        number; // passive income at level 1
+  farr_cost:           number;
+  prereq:              HeroPrereq | null;
+  unlock_requirement:  string; // friendly text version of prereq, '' if none
+}
+
+export interface OwnedHero {
+  hero_id:      string;
+  level:        number;
+  zar_per_hour: number;
+}
+
+interface RawCatalog {
+  status: boolean;
+  heroes: Array<{
+    slug: string; name: string; rarity?: string; era?: string; category?: string; description?: string;
+    image_url?: string; cost?: number; zar_per_hour?: number; farr_cost?: number;
+    prereq?: HeroPrereq | null; unlock_requirement?: string; status?: string;
+  }>;
+}
+
+const VALID_CATEGORIES: HeroCategory[] = ['hero', 'place', 'enemy', 'special'];
+
+function normalize(raw: RawCatalog): HeroCatalogEntry[] {
+  return raw.heroes
+    .filter((h) => h.status !== 'inactive')
+    .map((h) => ({
+      slug:               h.slug,
+      name:               h.name,
+      rarity:             h.rarity ?? '',
+      era:                h.era ?? '',
+      category:           (VALID_CATEGORIES as string[]).includes(h.category ?? '') ? h.category as HeroCategory : '',
+      description:        h.description ?? '',
+      image_url:          h.image_url ? (h.image_url.startsWith('http') ? h.image_url : `${SHAHNAMEH_ORIGIN}${h.image_url}`) : '',
+      cost:               h.cost ?? 0,
+      zar_per_hour:       h.zar_per_hour ?? 0,
+      farr_cost:          h.farr_cost ?? 0,
+      prereq:             h.prereq ?? null,
+      unlock_requirement: h.unlock_requirement ?? '',
+    }));
+}
+
+let _inFlight: Promise<HeroCatalogEntry[]> | null = null;
+
+export async function getHeroCatalog(): Promise<HeroCatalogEntry[]> {
+  const cached = syncGet(CACHE_KEY);
+  const ttlStr = syncGet(CACHE_TTL_KEY);
+  const expiry = ttlStr ? parseInt(ttlStr, 10) : 0;
+
+  if (cached && Date.now() < expiry) {
+    try { return JSON.parse(cached) as HeroCatalogEntry[]; } catch {}
+  }
+
+  if (_inFlight) return _inFlight;
+  _inFlight = _fetch(cached).finally(() => { _inFlight = null; });
+  return _inFlight;
+}
+
+async function _fetch(staleCache: string | null): Promise<HeroCatalogEntry[]> {
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch(CATALOG_URL, { signal: controller.signal });
+    clearTimeout(tid);
+    const raw = await res.json() as RawCatalog;
+    const entries = normalize(raw);
+    if (entries.length > 0) {
+      storage.setItem(CACHE_KEY, JSON.stringify(entries));
+      storage.setItem(CACHE_TTL_KEY, String(Date.now() + CACHE_TTL_MS));
+      return entries;
+    }
+  } catch { /* network unavailable — fall through to stale cache / empty */ }
+
+  if (staleCache) {
+    try { return JSON.parse(staleCache) as HeroCatalogEntry[]; } catch {}
+  }
+  return [];
+}
+
+export async function getOwnedHeroes(telegramId: string): Promise<Map<string, OwnedHero>> {
+  if (!telegramId) return new Map();
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch(`${SHAHNAMEH_ORIGIN}/api/season2/user/heroes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: telegramId }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+    const json = await res.json();
+    if (json?.status !== 1 || !Array.isArray(json.heroes)) return new Map();
+    return new Map(json.heroes.map((h: { hero_id: string; level: number; zar_per_hour: number }) => [h.hero_id, { hero_id: h.hero_id, level: h.level, zar_per_hour: h.zar_per_hour }]));
+  } catch {
+    return new Map();
+  }
+}
+
+export type ActionResult<T = Record<string, unknown>> =
+  | { ok: true; data: T }
+  | { ok: false; error: string };
+
+export async function buyHero(telegramId: string, heroId: string): Promise<ActionResult<{ new_balance: number; level: number; zar_per_hour: number }>> {
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10_000);
+    const res = await fetch(`${SHAHNAMEH_ORIGIN}/api/season2/user/buy-hero`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: telegramId, hero_id: heroId }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+    const json = await res.json();
+    if (json?.status === 1) return { ok: true, data: { new_balance: json.new_balance, level: json.level, zar_per_hour: json.zar_per_hour } };
+    return { ok: false, error: String(json?.error ?? 'unknown_error') };
+  } catch {
+    return { ok: false, error: 'network_error' };
+  }
+}
+
+export async function upgradeHero(telegramId: string, heroId: string): Promise<ActionResult<{ new_balance: number; level: number; zar_per_hour: number }>> {
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10_000);
+    const res = await fetch(`${SHAHNAMEH_ORIGIN}/api/season2/user/upgrade-hero`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: telegramId, hero_id: heroId }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+    const json = await res.json();
+    if (json?.status === 1) return { ok: true, data: { new_balance: json.new_balance, level: json.level, zar_per_hour: json.zar_per_hour } };
+    return { ok: false, error: String(json?.error ?? 'unknown_error') };
+  } catch {
+    return { ok: false, error: 'network_error' };
+  }
+}
+
+/**
+ * Free hero-card grant for chapter completion (2026-07-29,
+ * `docs/realgram/TASK_SPLIT.md` — native quiz/battle round). Mirrors
+ * chapter.js's own `grantChapterCard()` fetch exactly, but the server
+ * (`/user/grant-hero`) ignores any client-submitted zar_per_hour and
+ * independently re-validates the chapter is actually done via the same
+ * `ChapterProgress` collection this app now syncs to
+ * (chapterProgressSyncService.ts) — real anti-cheat, not just convention.
+ * `unknown_hero` is an expected, not-yet-added-to-the-live-economy result
+ * for most chapters past the first few (`HERO_CATALOG` only has 33 active
+ * entries; season2's own chapter-reward map names ~50 chapters' worth of
+ * heroes) — callers should degrade to a plain "chapter complete" message
+ * rather than treat this as a real error. */
+/**
+ * Sweeps every chapter the caller has completed against the server's own
+ * slug→hero_id reward map (`lib/chapterCardRewards.js`'s `SLUG_TO_HERO`,
+ * server-audited 2026-06-24 — every one of the 50 chapters resolves to a
+ * real, live `HERO_CATALOG` entry, unlike what an earlier pass through
+ * this code assumed) and grants whatever's missing. Idempotent — safe to
+ * call after every chapter completion without knowing the reward hero_id
+ * ahead of time; the ONE real advantage over grantHero() above is this
+ * function never needs this app to duplicate that 50-entry map at all.
+ * Returns the hero_ids actually granted this call (usually 0 or 1). */
+export async function reconcileChapterRewards(telegramId: string): Promise<string[]> {
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10_000);
+    const res = await fetch(`${SHAHNAMEH_ORIGIN}/api/season2/user/reconcile-chapter-rewards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: telegramId }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+    const json = await res.json();
+    if (json?.status === 1 && Array.isArray(json.granted)) return json.granted;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function grantHero(telegramId: string, heroId: string): Promise<ActionResult<{ alreadyOwned: boolean; level: number; zarPerHour: number }>> {
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10_000);
+    const res = await fetch(`${SHAHNAMEH_ORIGIN}/api/season2/user/grant-hero`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: telegramId, hero_id: heroId }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+    const json = await res.json();
+    if (json?.status === 1) {
+      return { ok: true, data: { alreadyOwned: !!json.already_owned, level: json.level ?? 1, zarPerHour: json.zar_per_hour ?? 0 } };
+    }
+    return { ok: false, error: String(json?.error ?? 'unknown_error') };
+  } catch {
+    return { ok: false, error: 'network_error' };
+  }
+}

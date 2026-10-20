@@ -18,7 +18,7 @@
 //     route through it — this service does not touch the routing table by
 //     hand.
 //   - Verify real traffic flows before reporting success (Rule 2 in
-//     docs/CLAUDE_REALINK_RULES.md: "Connected != Working Unless Internet
+//     docs/CLAUDE_REALGRAM_RULES.md: "Connected != Working Unless Internet
 //     Traffic Is Verified") via a real SOCKS5 HTTP probe, not just a
 //     process-alive check.
 //   - Expose start/stop/status to the unelevated app process over a named

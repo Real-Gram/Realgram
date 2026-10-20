@@ -1,0 +1,213 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming,
+} from 'react-native-reanimated';
+import { Colors, Radius, Spacing, Typography } from '../design/tokens';
+import { GoldButton } from './GoldButton';
+import { StarlinkMark } from './StarlinkMark';
+import { useT } from '../i18n';
+
+/**
+ * StarlinkBanner — cyan/violet, not gold, on purpose ("Cyan = Starlink/
+ * network" is the theme's own rule; gold stays reserved for currency/the
+ * coin). Two variants, matching the theme pkg exactly:
+ *   'vip'  — the locked-reward card (04-freedom.html §vip). Gold wordmark
+ *            (framed as a reward you unlock), invite-progress track, a real
+ *            interactive "Invite Friends" GoldButton CTA.
+ *   'hero' — the bigger Home-top banner (01-home.html §hero,
+ *            10-starlink-banner.html). Cyan wordmark (framed as the
+ *            network itself, not a reward), stars + orbiting satellite
+ *            backdrop. Decorative CTA text only — the whole card is a
+ *            single TouchableOpacity at the call site (HomeScreen), same
+ *            interaction the plain banner it replaces already had.
+ */
+
+interface Props {
+  variant?: 'vip' | 'hero';
+  unlocked: boolean;
+  inviteCount: number;
+  inviteTarget: number;
+  onInvite: () => void;
+  /** false while the physical node is down (e.g. dish offline) — card stays
+   *  visible per product rule ("never hide it"), just grays out with a
+   *  "Soon" badge instead of the normal locked/unlocked copy. Defaults to
+   *  true so screens that don't pass it keep today's behavior. */
+  available?: boolean;
+}
+
+function useSlowOrbit(durationMs: number) {
+  const orbit = useSharedValue(0);
+  useEffect(() => {
+    let cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      if (cancelled || reduced) return;
+      orbit.value = withRepeat(withTiming(1, { duration: durationMs, easing: Easing.linear }), -1, false);
+    }).catch(() => {});
+    return () => { cancelled = true; cancelAnimation(orbit); };
+  }, [orbit, durationMs]);
+  return orbit;
+}
+
+function Star({ left, top, delay }: { left: number; top: number; delay: number }) {
+  const twinkle = useSharedValue(0);
+  useEffect(() => {
+    twinkle.value = withDelay(delay, withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1, true,
+    ));
+  }, [twinkle, delay]);
+  const style = useAnimatedStyle(() => ({ opacity: 0.15 + twinkle.value * 0.7 }));
+  return <Animated.View style={[styles.star, { left: `${left}%`, top: `${top}%` }, style]} />;
+}
+
+export function StarlinkBanner({ variant = 'vip', unlocked, inviteCount, inviteTarget, onInvite, available = true }: Props) {
+  const { t } = useT();
+  const inviteLeft = Math.max(0, inviteTarget - inviteCount);
+  const isHero = variant === 'hero';
+
+  // Khabat, 2026-07-30 (test-120): "det ikonet går ut av boksen igjen" —
+  // this is the second time this satellite has clipped the card edge. The
+  // last fix (below) moved the anchor further from the card's edge than the
+  // orbit radius, but that math was against the card's PRE-trim height; the
+  // same session's later content trim (dropped the wordmark description +
+  // progress track, removed minHeight — see `card`'s own comment) shrank the
+  // card enough that a bottom-anchored orbit clips again regardless of
+  // anchor position. Real fix this time: stop anchoring to a card edge at
+  // all. The orbit now lives in `orbitStage`, a small fixed-size box placed
+  // as a third child of `headRow` between the STARLINK wordmark and the
+  // badge/status text ("den kan gå i orbit mellom starlinktekstene på hver
+  // side av boksen") — its radius is sized to always stay inside that box,
+  // so nothing here can clip again no matter how tall the card ends up.
+  const orbit = useSlowOrbit(isHero ? 22000 : 26000);
+  const satStyle = useAnimatedStyle(() => {
+    const a = orbit.value * Math.PI * 2;
+    const r = 11;
+    return { transform: [{ translateX: Math.cos(a) * r }, { translateY: Math.sin(a) * (r * 0.5) }] };
+  });
+
+  const stars = useMemo(
+    () => (isHero ? Array.from({ length: 5 }, () => ({
+      left: Math.random() * 90, top: Math.random() * 55, delay: Math.random() * 2000,
+    })) : []),
+    [isHero],
+  );
+
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => { AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {}); }, []);
+
+  return (
+    <View style={[styles.card, isHero && styles.cardHero, !available && styles.cardSoon]}>
+      {isHero
+        ? (available && !reduceMotion && stars.map((s, i) => <Star key={i} {...s} />))
+        : <View style={styles.corner}><Text style={styles.cornerText}>VIP</Text></View>}
+
+      <View style={styles.headRow}>
+        <Text style={[styles.word, isHero && styles.wordHero, !available && styles.wordSoon]}>STARLINK</Text>
+        <View style={styles.orbitStage}>
+          <Animated.View style={[styles.orbitDot, available && satStyle, !available && styles.orbitDotSoon]}>
+            <StarlinkMark size={isHero ? 18 : 16} />
+          </Animated.View>
+        </View>
+        <View style={[styles.badge, !available && styles.badgeSoon]}>
+          <Text style={styles.badgeIcon}>{!available ? '🕓' : unlocked ? '✓' : '🔒'}</Text>
+          <Text style={[styles.badgeText, !available && styles.badgeTextSoon]}>
+            {!available ? t('sl.soon') : unlocked ? t('home.starlinkUnlocked') : t('home.starlinkAccess')}
+          </Text>
+        </View>
+      </View>
+
+      {/* Khabat, 2026-07-30: "starlink banner kan være mindre i høyden.
+          trenger ikke mye text der enn enten: 1. for å få tilgang må du ha
+          x antall invites/clan medlemer. 2. nå har du tilgang" — collapsed
+          the wordmark description + dot-progress track down to this one
+          status line, in both states. Dish-down state (available=false,
+          2026-08-22) reuses the same line for the maintenance note instead
+          of inventing a third copy slot. */}
+      <Text style={styles.statusLine} numberOfLines={1}>
+        {!available
+          ? t('sl.maintenance')
+          : unlocked ? t('starlink.connectCta') : t('home.starlinkInviteHint').replace('{n}', String(inviteLeft))}
+      </Text>
+
+      {available && !unlocked && !isHero && (
+        <GoldButton style={styles.cta} textStyle={styles.ctaText} onPress={onInvite} accessibilityLabel={t('pr.inviteFriends')}>
+          {`👥 ${t('pr.inviteFriends')}`}
+        </GoldButton>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: Radius['2xl'],
+    paddingHorizontal: Spacing[4],
+    paddingVertical: Spacing[3],
+    backgroundColor: Colors.bg.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(51,211,255,0.22)',
+    gap: Spacing[1],
+  },
+  cardHero: {
+    backgroundColor: '#0A1220',
+    shadowColor: Colors.cyan[400],
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 4,
+  },
+  // Dish-down state: same layout, desaturated to the theme's own muted-text
+  // tones (no new gray palette introduced) so the banner reads as "off",
+  // not as another active/errored server.
+  cardSoon: {
+    borderColor: 'rgba(61,85,112,0.4)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing[2] },
+  corner: {
+    position: 'absolute', top: 14, right: -30, zIndex: 3,
+    backgroundColor: Colors.gold[400], transform: [{ rotate: '40deg' }],
+    paddingHorizontal: 36, paddingVertical: 3,
+  },
+  cornerText: { fontSize: 10, fontFamily: Typography.family.heading, color: '#241605', letterSpacing: 1 },
+  // orbitStage: fixed-size, non-overflowing box the satellite orbits
+  // inside — see the JS-side comment above satStyle for why this replaced
+  // the earlier edge-anchored `sat`/`satHero` (both gone; that approach
+  // clipped a second time once the card lost its minHeight). r=11 orbit +
+  // 18px icon needs ~29px of diameter; 34 leaves a small buffer on every side.
+  orbitStage: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  orbitDot:   { opacity: 0.85 },
+  orbitDotSoon: { opacity: 0.3 },
+  star: { position: 'absolute', width: 2, height: 2, borderRadius: 1, backgroundColor: '#FFFFFF' },
+
+  badge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(51,211,255,0.12)', borderWidth: 1, borderColor: 'rgba(51,211,255,0.4)',
+    borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 4,
+  },
+  badgeSoon: { backgroundColor: 'rgba(61,85,112,0.18)', borderColor: 'rgba(61,85,112,0.5)' },
+  badgeIcon: { fontSize: 10 },
+  badgeText: { fontSize: 10, fontFamily: Typography.family.label, color: Colors.cyan[300], letterSpacing: 1.5, textTransform: 'uppercase' },
+  badgeTextSoon: { color: Colors.text.secondary },
+
+  // Gold wordmark on the vip card (framed as a reward you unlock); cyan on
+  // the hero (framed as the network itself) — matches the two mockups
+  // exactly, not the same treatment reused twice.
+  word: { fontSize: 19, fontFamily: Typography.family.displayGoldBold, color: Colors.gold[100], letterSpacing: 1 },
+  wordHero: { color: Colors.cyan[300], fontSize: 20 },
+  wordSoon: { color: Colors.text.muted },
+  statusLine: { fontSize: 12, fontFamily: Typography.family.body, color: Colors.text.secondary, marginTop: 2 },
+
+  cta: {
+    marginTop: Spacing[2], alignSelf: 'flex-start',
+    paddingHorizontal: 18,
+  },
+  ctaText: { fontSize: 13.5, fontFamily: Typography.family.heading },
+});

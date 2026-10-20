@@ -1,7 +1,7 @@
 ; RealGram for Windows — single-file installer.
 ;
 ; Replaces the old "download a zip, unzip, open Dependencies\, double-click
-; each .appx by hand, THEN run setalink.exe, click through SmartScreen"
+; each .appx by hand, THEN run realgram.exe, click through SmartScreen"
 ; flow (see release-windows.yml's history comment on why the zip had a
 ; Dependencies\ folder at all) with one .exe: download, double-click,
 ; Next/Next/Finish, app launches.
@@ -13,7 +13,7 @@
 ; manual double-click of the .appx errored, and the app still couldn't
 ; find its DLLs afterwards. Root cause turned out not to need AppX at all:
 ; the required _app-suffixed DLLs are just loose files inside the .appx
-; zip containers, and setalink.exe (an unpackaged win32 exe) resolves them
+; zip containers, and realgram.exe (an unpackaged win32 exe) resolves them
 ; via normal DLL search order, not MSIX framework references. The build
 ; workflow now extracts those DLLs straight into AppFilesDir (see
 ; release-windows.yml's "Stage installer inputs" step) — this script just
@@ -40,7 +40,7 @@
 #endif
 
 #define AppName "RealGram"
-#define AppExeName "setalink.exe"
+#define AppExeName "realgram.exe"
 #define AppPublisher "RealGram"
 #define AppURL "https://realgram.no"
 
@@ -85,7 +85,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 ; recursesubdirs matters more than it looks: as of 2026-08-24 AppFiles has a
 ; Bundle\ subfolder holding index.windows.bundle (the app's JavaScript) plus
-; its images/fonts. Without that folder on disk next to setalink.exe the app
+; its images/fonts. Without that folder on disk next to realgram.exe the app
 ; installs fine and then dies on launch with no message — see
 ; release-windows.yml's "Stage installer inputs" step for the full story.
 ; Excludes: .pdb/sourcemaps are debug artifacts MSBuild drops in the same

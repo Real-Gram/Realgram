@@ -1,0 +1,171 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+// Builds without push config still work; background ringing is unavailable.
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
+// Load release signing credentials from keystore.properties (not committed to git)
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps     = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
+react {
+    entryFile      = file("../../index.js")
+    reactNativeDir = file("$rootDir/../node_modules/react-native")
+    hermesCommand  = "$rootDir/../node_modules/react-native/sdks/hermesc/linux64-bin/hermesc"
+    codegenDir     = file("$rootDir/../node_modules/@react-native/codegen")
+    autolinkLibrariesWithApp()
+
+    // RNGP's default (debuggableVariants = ['debug']) skips bundling JS into
+    // the debug variant entirely, on the assumption a debug APK always runs
+    // attached to a Metro dev server. android-debug.yml builds debug APKs
+    // for standalone install (Khabat previewing on his own phone, no dev
+    // machine involved) — without this, that APK red-screens on launch with
+    // "Unable to load script" the instant it can't reach Metro. Empty list =
+    // no variant is treated as metro-only; debug gets its JS bundled too.
+    debuggableVariants = []
+}
+
+android {
+    namespace          "com.realgram"
+    compileSdk         rootProject.ext.compileSdkVersion
+    buildToolsVersion  rootProject.ext.buildToolsVersion
+    ndkVersion         rootProject.ext.ndkVersion
+
+    defaultConfig {
+        applicationId (System.getenv("REALGRAM_ANDROID_APPLICATION_ID") ?: "com.realgram")
+        minSdk         rootProject.ext.minSdkVersion
+        targetSdk      rootProject.ext.targetSdkVersion
+        versionCode    190
+        versionName    "0.9.150"
+
+        manifestPlaceholders = [appLabel: "@string/app_name"]
+
+        // ARM only — libxray/libtun2socks ship no x86 builds, so an x86 APK
+        // would install but never connect. Also keeps the universal APK small.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+
+    signingConfigs {
+        debug {
+            storeFile     file("debug.keystore")
+            storePassword "android"
+            keyAlias      "androiddebugkey"
+            keyPassword   "android"
+        }
+        release {
+            storeFile     file(keystoreProps['storeFile'] ?: 'release.keystore')
+            storePassword keystoreProps['storePassword'] ?: ''
+            keyAlias      keystoreProps['keyAlias']      ?: ''
+            keyPassword   keystoreProps['keyPassword']   ?: ''
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig    signingConfigs.release
+            minifyEnabled    false
+            shrinkResources  false
+            proguardFiles    getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+
+    // Per-architecture APKs — each is ~40 % smaller than a fat universal APK.
+    // arm64-v8a covers most phones since 2015; armeabi-v7a covers 32-bit
+    // devices (Samsung J/A series ship 32-bit OS even on 64-bit chips).
+    // universalApk bundles both for users who can't pick an ABI.
+    splits {
+        abi {
+            enable         true
+            reset()
+            include        'arm64-v8a', 'armeabi-v7a'
+            universalApk   true
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    // Prevent NDK from stripping our standalone ELF executables packaged as .so
+    // and force extraction to nativeLibraryDir on install (not compressed in APK).
+    packagingOptions {
+        doNotStrip "*/arm64-v8a/libxray.so"
+        doNotStrip "*/arm64-v8a/libtun2socks.so"
+        doNotStrip "*/armeabi-v7a/libxray.so"
+        doNotStrip "*/armeabi-v7a/libtun2socks.so"
+        jniLibs {
+            useLegacyPackaging true
+        }
+        resources {
+            // BouncyCastle's bcprov/bcpkix/bcutil-jdk18on jars (REAL SSH
+            // transport, 2026-08-22) each ship an identical OSGi manifest
+            // fragment at this path — irrelevant on Android, just needs to
+            // not collide when merging resources across the 4 jars that
+            // carry it (third CI failure of build 179).
+            excludes += ["META-INF/versions/9/OSGI-INF/MANIFEST.MF"]
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:hermes-android")
+
+    implementation("com.google.firebase:firebase-messaging:24.1.2")
+
+    // Kotlin
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:${rootProject.ext.kotlinVersion}")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // AndroidX
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("androidx.biometric:biometric:1.1.0")
+    // Encrypted-at-rest storage for the REAL SSH device private key (Keystore-
+    // wrapped master key, standard Jetpack Security pattern).
+    implementation("androidx.security:security-crypto:1.1.0")
+
+    // REAL SSH transport (2026-08-22): plain SSH dynamic-forward fallback.
+    // sshj = SSH client (direct-tcpip channel = the "-D" dynamic-forward
+    // primitive our SOCKS5 bridge needs). sshj's own bcprov-jdk18on
+    // dependency is RUNTIME-scope in its POM, so it's on the runtime
+    // classpath but NOT the compile classpath — RealSshTunnel.kt imports
+    // BouncyCastleProvider directly, so it needs to be a compile-time dep
+    // too. Pinning the SAME artifact+version sshj already uses (not the
+    // bcprov-jdk15to18 build, which caused a "Duplicate class" R8/D8
+    // failure on the first CI attempt of this build — same BC module,
+    // two differently-packaged jars, real conflict) so Gradle resolves
+    // to exactly one jar either way.
+    implementation("com.hierynomus:sshj:0.40.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+}

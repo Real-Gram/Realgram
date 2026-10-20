@@ -1,0 +1,173 @@
+name: Android Debug APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile-app/**'
+      - '.github/workflows/android-debug.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile-app/**'
+  workflow_dispatch:
+
+jobs:
+  build-debug:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      # ── Source ──────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Toolchain ───────────────────────────────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK and CMake
+        run: yes | sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Set up Gradle 8.6
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      # ── JS dependencies ─────────────────────────────────────────────────────
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: mobile-app/node_modules
+          key: node-modules-${{ hashFiles('mobile-app/package.json') }}
+          restore-keys: node-modules-
+
+      - name: Install JS dependencies
+        working-directory: mobile-app
+        run: npm install
+
+      # ── Android build setup ─────────────────────────────────────────────────
+      - name: Download Gradle wrapper jar
+        working-directory: mobile-app/android
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o gradle/wrapper/gradle-wrapper.jar
+          chmod +x gradlew
+
+      - name: Configure incoming-call push when Firebase project is available
+        env:
+          REALGRAM_GOOGLE_SERVICES_JSON: ${{ secrets.REALGRAM_GOOGLE_SERVICES_JSON }}
+        run: |
+          python3 - <<'PYCONFIG'
+          import os, json, pathlib
+          raw = os.environ.get('REALGRAM_GOOGLE_SERVICES_JSON', '')
+          if raw:
+              config = json.loads(raw)
+              assert any(c.get('client_info', {}).get('android_client_info', {}).get('package_name') == os.environ.get('REALGRAM_ANDROID_APPLICATION_ID', 'com.realgram') for c in config.get('client', [])), 'Firebase package must be com.realgram'
+              pathlib.Path('mobile-app/android/app/google-services.json').write_text(raw)
+          else:
+              print('::notice::Firebase project config is absent; background call push is unavailable in this build.')
+          PYCONFIG
+
+      - name: Prepare verified native executables
+        run: python3 scripts/prepare-android-native.py
+
+      - name: Generate local.properties
+        working-directory: mobile-app/android
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
+      # build.gradle's tracked versionCode (118 as of this branch) reflects
+      # the real product's release history — it does NOT go up on every CI
+      # debug run. A tester's device can easily already have a build
+      # installed with a HIGHER versionCode than whatever's currently in
+      # source (a later real release, or an earlier debug build from a
+      # workflow run further in the future than this checkout). Android
+      # refuses to install anything with a lower versionCode over an
+      # existing install (INSTALL_FAILED_VERSION_DOWNGRADE) — no error
+      # dialog explaining why, it just silently "can't install" ("feil
+      # versjon", Khabat's S21 report). Debug builds only ever need to
+      # install SOMEWHERE higher than whatever's on the test device right
+      # now, never to match the real release number, so overwrite it here
+      # with something that can only ever go up: a fixed offset (so it's
+      # obviously a debug build, never confusable with a real release
+      # versionCode) plus this workflow's own run number (monotonically
+      # increasing, so build N+1 always installs over build N with no
+      # uninstall needed).
+      - name: Bump debug versionCode (always higher than any real release)
+        working-directory: mobile-app/android/app
+        run: |
+          NEW_CODE=$((900000 + ${{ github.run_number }}))
+          sed -i -E "s/(versionCode[[:space:]]+)[0-9]+/\1${NEW_CODE}/" build.gradle
+          grep -m1 versionCode build.gradle
+
+      # A fresh keystore every run meant every debug APK was signed with a
+      # different, random key — Android refuses to install a new signer over
+      # whatever debug build (or release) is already on the device ("App not
+      # installed as package conflicts with an existing package"), forcing an
+      # uninstall before every single test build. Cache with a FIXED key (no
+      # hashFiles — nothing about this keystore should ever change) so the
+      # same debug.keystore is reused across every run from here on.
+      - name: Cache debug keystore
+        id: cache-debug-keystore
+        uses: actions/cache@v4
+        with:
+          path: mobile-app/android/app/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: Generate debug keystore (only on cache miss)
+        if: steps.cache-debug-keystore.outputs.cache-hit != 'true'
+        working-directory: mobile-app/android/app
+        run: |
+          keytool -genkey -v \
+            -keystore debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            2>/dev/null
+
+      # ── Build ────────────────────────────────────────────────────────────────
+      - name: Build debug APK
+        working-directory: mobile-app/android
+        run: ./gradlew assembleDebug --stacktrace
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.1.10909125
+
+      # ── Artifact ─────────────────────────────────────────────────────────────
+      # ABI splits are enabled (arm64-v8a, armeabi-v7a) + universalApk, so
+      # assembleDebug emits per-ABI APKs — there is no single app-debug.apk.
+      - name: List built APKs
+        working-directory: mobile-app/android/app/build/outputs/apk/debug
+        run: ls -lh *.apk
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: realgram-debug-${{ github.run_number }}
+          path: |
+            mobile-app/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+            mobile-app/android/app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+            mobile-app/android/app/build/outputs/apk/debug/app-universal-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Print APK sizes
+        working-directory: mobile-app/android/app/build/outputs/apk/debug
+        run: du -sh *.apk

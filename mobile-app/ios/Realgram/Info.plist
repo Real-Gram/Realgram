@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>RealGram</string>
+
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+
+    <!-- RealGram gold/silver theme typefaces (linked via react-native-asset) -->
+    <key>UIAppFonts</key>
+    <array>
+        <string>SpaceGrotesk-Regular.ttf</string>
+        <string>SpaceGrotesk-Bold.ttf</string>
+        <string>Vazirmatn-Regular.ttf</string>
+        <string>JetBrainsMono-Regular.ttf</string>
+    </array>
+
+    <!-- Supported localizations -->
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>fa</string>
+    </array>
+
+    <!-- Deep link URL scheme -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>no.realgram.app.deeplink</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>realgram</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- VPN usage description (required by App Store) -->
+    <key>NSVPNUsageDescription</key>
+    <string>RealGram uses a VPN connection to secure your internet traffic and bypass network restrictions.</string>
+
+    <!-- Face ID -->
+    <key>NSFaceIDUsageDescription</key>
+    <string>RealGram uses Face ID to protect your account.</string>
+
+    <!-- Microphone (audio calling, react-native-webrtc) -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>RealGram needs microphone access so you can make and receive audio calls with friends.</string>
+
+    <!-- Camera (video calling, phase 2 — not enabled yet, built ahead of time) -->
+    <key>NSCameraUsageDescription</key>
+    <string>RealGram needs camera access so you can make and receive video calls with friends.</string>
+
+    <!-- ATT prompt — required by AdMob 14+ on iOS 14+; app rejected without this -->
+    <key>NSUserTrackingUsageDescription</key>
+    <string>RealGram shows ads to keep the service free. Your data is never sold or shared.</string>
+
+    <!-- AdMob iOS App ID — REQUIRED: app crashes on launch without this key.
+         1. Go to admob.google.com → Apps → Add App → iOS
+         2. Replace the placeholder below with your real ca-app-pub-XXXX~YYYY ID -->
+    <key>GADApplicationIdentifier</key>
+    <string>ca-app-pub-5788265416382988~9590370979</string>
+
+    <!-- AdMob SKAdNetwork IDs — required for iOS 14+ conversion tracking -->
+    <key>SKAdNetworkItems</key>
+    <array>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>cstr6suwn9.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>4fzdc2evr5.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>2fnua5tdw4.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>ydx93a7ass.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>5a6flpkh64.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>p78axxw29g.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>v72qych5uu.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>ludvb6z4gh.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>cp8zw746q7.skadnetwork</string>
+        </dict>
+        <dict>
+            <key>SKAdNetworkIdentifier</key>
+            <string>3sh42y64l3.skadnetwork</string>
+        </dict>
+    </array>
+
+    <!-- Network Extension companion key -->
+    <key>NEVPNEnabled</key>
+    <true/>
+
+    <key>UILaunchScreen</key>
+    <dict/>
+
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+    </array>
+
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+
+    <!-- Keep an active audio call alive if the app is backgrounded
+         (react-native-webrtc) -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <string>voip</string>
+    </array>
+
+    <!-- Allow local networking in debug; disable arbitrary loads -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+
+</dict>
+</plist>

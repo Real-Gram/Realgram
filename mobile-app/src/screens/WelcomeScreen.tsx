@@ -1,0 +1,295 @@
+import React, { useRef, useEffect, useState } from 'react';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  Animated, ScrollView, Clipboard, Share, TextInput, Dimensions, Easing,
+} from 'react-native';
+import { Colors, Typography, Spacing, Radius, Layout } from '../design/tokens';
+import { GlassCard } from '../components/GlassCard';
+import { useT } from '../i18n';
+import { useAuthStore } from '../stores/authStore';
+import { useToastStore } from '../stores/toastStore';
+import { useReferral } from '../services/entitlementService';
+
+const ONE_GB  = 1024 * 1024 * 1024;
+const FIVE_GB = 5 * ONE_GB; // signup gift — every new account starts with 5 GB
+
+function formatGb(bytes: number): string {
+  const gb = bytes / ONE_GB;
+  return Number.isInteger(gb) ? String(gb) : gb.toFixed(1);
+}
+
+interface Props {
+  onStart: () => void;
+}
+
+export function WelcomeScreen({ onStart }: Props) {
+  const { t } = useT();
+  const user          = useAuthStore((s) => s.user);
+  const addBonusBytes = useAuthStore((s) => s.addBonusBytes);
+  const showToast     = useToastStore((s) => s.show);
+
+  const [redeemCode, setRedeemCode] = useState('');
+  const [applying,   setApplying]   = useState(false);
+  const [redeemed,   setRedeemed]   = useState(false);
+
+  const opacity   = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(32)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity,    { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, damping: 18, stiffness: 180, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const referralCode = user?.referralCode ?? '—';
+  const quotaGb      = formatGb(user?.quotaBytesTotal ?? FIVE_GB);
+
+  // Calm shimmer sweeping across the gift card in a slow loop — enough to
+  // draw the eye without shouting. Native driver, transform-only.
+  const shimmerX = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const w = Dimensions.get('window').width;
+    const sweep = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerX, {
+          toValue: 1, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true,
+        }),
+        Animated.delay(2200),
+        Animated.timing(shimmerX, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ]),
+    );
+    sweep.start();
+    return () => sweep.stop();
+  }, []);
+  const shimmerTranslate = shimmerX.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-90, Dimensions.get('window').width],
+  });
+
+  const applyReferral = async () => {
+    const code = redeemCode.trim().toUpperCase();
+    if (!code || applying || redeemed) return;
+    const deviceId = user?.deviceId;
+    if (!deviceId) return;
+    setApplying(true);
+    try {
+      const result = await useReferral(deviceId, code);
+      addBonusBytes(result.bonus_bytes);
+      setRedeemed(true);
+      const mbBonus = Math.round(result.bonus_bytes / (1024 * 1024));
+      showToast(t('welcome.bonusAdded').replace('{mb}', String(mbBonus)), 'success', 3000);
+    } catch (e: any) {
+      showToast(e?.message ?? t('welcome.invalidCode'), 'error', 3000);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleCopy = () => {
+    Clipboard.setString(referralCode);
+    showToast(t('welcome.codeCopied'), 'success', 2000);
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: t('welcome.shareMessage').replace(/\{code\}/g, referralCode),
+      });
+    } catch { /* share dismissed */ }
+  };
+
+  return (
+    <View style={styles.screen}>
+      <View style={styles.glow} pointerEvents="none" />
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+      <Animated.View style={[styles.content, { opacity, transform: [{ translateY }] }]}>
+
+        {/* Hero */}
+        <View style={styles.heroSection}>
+          <View style={styles.logoOrb} />
+          <Text style={styles.appName}>RealGram</Text>
+          <Text style={styles.heroTitle}>{t('welcome.heroTitle')}</Text>
+          <Text style={styles.heroSub}>
+            {t('welcome.heroSub')}
+          </Text>
+        </View>
+
+        {/* Starter gift — 5 GB for every new account */}
+        <GlassCard glowColor={Colors.gold[400]} style={styles.packageCard}>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.shimmer, { transform: [{ translateX: shimmerTranslate }, { rotate: '18deg' }] }]}
+          />
+          <View style={styles.giftChip}>
+            <Text style={styles.giftChipText}>{t('welcome.giftChip')}</Text>
+          </View>
+          <Text style={styles.packageLabel}>{t('welcome.packageLabel')}</Text>
+          <View style={styles.packageRow}>
+            <View style={styles.packageItem}>
+              <Text style={[styles.packageValue, styles.packageValueGold]}>{quotaGb} GB</Text>
+              <Text style={styles.packageMeta}>{t('welcome.freeTraffic')}</Text>
+            </View>
+            <View style={styles.packageDivider} />
+            <View style={styles.packageItem}>
+              <Text style={styles.packageValue}>1</Text>
+              <Text style={styles.packageMeta}>{t('welcome.device')}</Text>
+            </View>
+            <View style={styles.packageDivider} />
+            <View style={styles.packageItem}>
+              <Text style={styles.packageValue}>∞</Text>
+              <Text style={styles.packageMeta}>{t('welcome.speed')}</Text>
+            </View>
+          </View>
+          <View style={styles.freeNote}>
+            <View style={styles.freeDot} />
+            <Text style={styles.freeNoteText}>{t('welcome.noCreditCard')}</Text>
+          </View>
+        </GlassCard>
+
+        {/* Referral */}
+        <GlassCard glowColor={Colors.blue[400]} style={styles.referralCard}>
+          <Text style={styles.referralTitle}>{t('welcome.referralTitle')}</Text>
+          <Text style={styles.referralDesc}>
+            {t('welcome.referralDesc')}
+          </Text>
+          <View style={styles.codeRow}>
+            <Text style={styles.codeText}>{referralCode}</Text>
+            <TouchableOpacity style={styles.copyBtn} onPress={handleCopy} activeOpacity={0.75}>
+              <Text style={styles.copyBtnText}>{t('welcome.copy')}</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.8}>
+            <Text style={styles.shareBtnText}>{t('welcome.shareInviteLink')}</Text>
+          </TouchableOpacity>
+        </GlassCard>
+
+        {/* Redeem a friend's referral code */}
+        {!redeemed ? (
+          <GlassCard style={styles.redeemCard}>
+            <Text style={styles.redeemTitle}>{t('welcome.haveCode')}</Text>
+            <Text style={styles.redeemDesc}>{t('welcome.haveCodeDesc')}</Text>
+            <View style={styles.redeemRow}>
+              <TextInput
+                style={styles.redeemInput}
+                value={redeemCode}
+                onChangeText={(v) => setRedeemCode(v.toUpperCase())}
+                placeholder={t('welcome.enterCode')}
+                placeholderTextColor={Colors.text.muted}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={20}
+                editable={!applying}
+              />
+              <TouchableOpacity
+                style={[styles.redeemBtn, (applying || !redeemCode.trim()) && styles.redeemBtnDisabled]}
+                onPress={applyReferral}
+                disabled={applying || !redeemCode.trim()}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.redeemBtnText}>{applying ? '…' : t('welcome.apply')}</Text>
+              </TouchableOpacity>
+            </View>
+          </GlassCard>
+        ) : (
+          <View style={styles.redeemSuccess}>
+            <Text style={styles.redeemSuccessText}>{t('welcome.redeemedSuccess')}</Text>
+          </View>
+        )}
+
+        {/* Get started */}
+        <TouchableOpacity style={styles.startBtn} onPress={onStart} activeOpacity={0.85}>
+          <Text style={styles.startBtnText}>{t('welcome.getStarted')}</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.footnote}>
+          {t('welcome.footnote')}
+        </Text>
+
+      </Animated.View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen:        { flex: 1, backgroundColor: Colors.bg.base },
+  scroll:        { flex: 1 },
+  scrollContent: { flexGrow: 1, justifyContent: 'center' },
+  glow:          {
+    position: 'absolute', width: 400, height: 400, borderRadius: 200,
+    backgroundColor: Colors.emerald[900], opacity: 0.14, top: -80, alignSelf: 'center',
+  },
+  content:       {
+    paddingTop: Layout.statusBarHeight + Spacing[6],
+    paddingHorizontal: Layout.screenPadding,
+    paddingBottom: Spacing[8],
+    gap: Spacing[5],
+  },
+  heroSection:   { alignItems: 'center', gap: Spacing[3], paddingTop: Spacing[4] },
+  logoOrb:       {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: 'rgba(0,232,122,0.12)',
+    borderWidth: 2, borderColor: Colors.emerald[400],
+    shadowColor: Colors.emerald[400], shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 16, elevation: 8,
+  },
+  appName:       { fontSize: Typography.size.sm, fontFamily: Typography.family.label, color: Colors.emerald[400], letterSpacing: 3, textTransform: 'uppercase' },
+  heroTitle:     { fontSize: 32, fontFamily: Typography.family.heading, color: Colors.text.primary, letterSpacing: -0.5, textAlign: 'center' },
+  heroSub:       { fontSize: Typography.size.base, fontFamily: Typography.family.body, color: Colors.text.secondary, textAlign: 'center', lineHeight: 24 },
+  packageCard:   { gap: Spacing[4], overflow: 'hidden' },
+  shimmer:       {
+    position: 'absolute', top: -30, bottom: -30, width: 70,
+    backgroundColor: 'rgba(240,208,96,0.09)',
+  },
+  giftChip:      {
+    position: 'absolute', top: 10, right: 10,
+    backgroundColor: 'rgba(212,175,55,0.16)',
+    borderWidth: 1, borderColor: 'rgba(212,175,55,0.45)',
+    borderRadius: Radius.md, paddingHorizontal: Spacing[2], paddingVertical: 3,
+  },
+  giftChipText:  { fontSize: 10, fontFamily: Typography.family.label, color: Colors.gold[300], letterSpacing: 0.8 },
+  packageLabel:  { fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: Colors.text.muted, letterSpacing: 1.5 },
+  packageRow:    { flexDirection: 'row', alignItems: 'center' },
+  packageItem:   { flex: 1, alignItems: 'center', gap: 4 },
+  packageValue:  { fontSize: Typography.size['2xl'], fontFamily: Typography.family.heading, color: Colors.text.primary },
+  packageValueGold: { color: Colors.gold[300], textShadowColor: 'rgba(212,175,55,0.55)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 },
+  packageMeta:   { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.text.muted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  packageDivider:{ width: 1, height: 40, backgroundColor: Colors.border.subtle },
+  freeNote:      { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
+  freeDot:       { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.emerald[400] },
+  freeNoteText:  { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.emerald[400] },
+  referralCard:  { gap: Spacing[3] },
+  referralTitle: { fontSize: Typography.size.base, fontFamily: Typography.family.heading, color: Colors.text.primary },
+  referralDesc:  { fontSize: Typography.size.sm, fontFamily: Typography.family.body, color: Colors.text.secondary, lineHeight: 20 },
+  codeRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bg.elevated, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border.default, paddingHorizontal: Spacing[4], paddingVertical: Spacing[3], gap: Spacing[3] },
+  codeText:      { flex: 1, fontSize: Typography.size.base, fontFamily: Typography.family.mono, color: Colors.text.primary, letterSpacing: 2 },
+  copyBtn:       { backgroundColor: Colors.emerald[400], borderRadius: Radius.md, paddingHorizontal: Spacing[3], paddingVertical: 6 },
+  copyBtnText:   { fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: Colors.text.inverse },
+  shareBtn:      { borderWidth: 1, borderColor: Colors.blue[400], borderRadius: Radius.md, paddingVertical: Spacing[3], alignItems: 'center' },
+  shareBtnText:  { fontSize: Typography.size.sm, fontFamily: Typography.family.label, color: Colors.blue[400], letterSpacing: 0.3 },
+  redeemCard:    { gap: Spacing[2] },
+  redeemTitle:   { fontSize: Typography.size.sm, fontFamily: Typography.family.heading, color: Colors.text.secondary },
+  redeemDesc:    { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.text.muted, lineHeight: 18 },
+  redeemRow:     { flexDirection: 'row', gap: Spacing[2], alignItems: 'center' },
+  redeemInput:   {
+    flex: 1, height: 40, backgroundColor: Colors.bg.elevated, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.border.default,
+    paddingHorizontal: Spacing[3], color: Colors.text.primary,
+    fontSize: Typography.size.sm, fontFamily: Typography.family.mono, letterSpacing: 1.5,
+  },
+  redeemBtn:        { backgroundColor: Colors.blue[400], borderRadius: Radius.md, paddingHorizontal: Spacing[4], height: 40, justifyContent: 'center', alignItems: 'center' },
+  redeemBtnDisabled:{ opacity: 0.45 },
+  redeemBtnText:    { fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: Colors.text.inverse },
+  redeemSuccess:    { alignItems: 'center', paddingVertical: Spacing[2] },
+  redeemSuccessText:{ fontSize: Typography.size.sm, fontFamily: Typography.family.body, color: Colors.emerald[400], textAlign: 'center' },
+  startBtn:      { backgroundColor: Colors.emerald[400], borderRadius: Radius.xl, paddingVertical: Spacing[5], alignItems: 'center' },
+  startBtnText:  { fontSize: Typography.size.lg, fontFamily: Typography.family.heading, color: Colors.text.inverse, letterSpacing: 0.3 },
+  footnote:      { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.text.muted, textAlign: 'center', lineHeight: 18 },
+});

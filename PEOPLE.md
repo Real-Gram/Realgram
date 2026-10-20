@@ -2,7 +2,7 @@
 
 RealGram is built by two people who have worked together on this ecosystem
 for close to three years — starting with Shahnameh Season 1, through the
-REAL token/blockchain layer and the Realink VPN product, into RealGram as
+REAL token/blockchain layer and the Realgram VPN product, into RealGram as
 the platform that unifies all of it under one identity.
 
 ## Khabat Setaei — [setai.no](https://www.setai.no)

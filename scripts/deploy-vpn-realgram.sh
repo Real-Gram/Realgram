@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 # Deploy the repo-managed vpn.realgram.no nginx edge vhost safely.
-# Mirrors XS227/SetaLink's scripts/deploy-vpn-edge.sh pattern for
-# vpn-setalink, adapted for the realgram-branded twin edge on 5.249.252.88.
+# Mirrors Real-Gram/Realgram's scripts/deploy-vpn-edge.sh pattern for
+# vpn-realgram, adapted for the realgram-branded twin edge on 5.249.252.88.
 # This script intentionally does NOT modify /etc/nginx/nginx.conf or Xray
 # config — the stream{} map entry (vpn.realgram.no -> 127.0.0.1:4434) and
 # Xray inbounds are assumed already in place; this only manages the vhost file.

@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test-voucher.js && node test-presence.js"
+    "test": "node test-voucher.js && node test-presence.js && node --test test-push.js"
   },
   "dependencies": {
     "ws": "^8.18.0"

@@ -1,0 +1,1267 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, Image,
+  Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Linking, Dimensions,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming,
+} from 'react-native-reanimated';
+import { Colors, Typography, Spacing, Radius, Layout } from '../design/tokens';
+import { GlassCard } from '../components/GlassCard';
+import { AdBanner } from '../components/AdBanner';
+import { BottomNav } from '../components/BottomNav';
+import { EmberField } from '../components/EmberField';
+import { GoldButton } from '../components/GoldButton';
+import { VipBadge } from '../components/VipBadge';
+import { PeerProfileSheet } from '../components/PeerProfileSheet';
+import { isVipUser } from '../utils/vip';
+import { useAuthStore }  from '../stores/authStore';
+import { useInboxStore } from '../stores/inboxStore';
+import { useDMStore }    from '../stores/dmStore';
+import { useToastStore } from '../stores/toastStore';
+import { DM_MAX_LEN } from '../services/entitlementService';
+import { buildConversations, dmToChat, type Conversation, type ChatMessage } from '../utils/unifiedThreads';
+import { useT } from '../i18n';
+import { DM_REACTIONS } from '../services/entitlementService';
+import { setTyping as apiSetTyping, getTyping as apiGetTyping } from '../services/entitlementService';
+import { listThreadMessages, searchMessages } from '../services/entitlementService';
+import { blockUser, reportMessage, type DMReportReason } from '../services/entitlementService';
+import { Logger } from '../utils/logger';
+import { useCallStore } from '../stores/callStore';
+import { CALLING_ENABLED } from '../config/featureFlags';
+
+const REALGRAM_LOGO = require('../assets/logo_mark.png');
+
+// Thread header overflow-menu fallback anchor, before/without a real
+// measurement — see TopBar.tsx's identical pattern/note. Opening the menu
+// is never gated on measureInWindow's callback actually firing.
+const THREAD_MENU_FALLBACK_POS = { top: Layout.statusBarHeight + Spacing[2] + 44, right: Layout.screenPadding };
+
+// "Clan" tab deliberately excluded — no real clan-member-ID list exists
+// client-side to cross-reference DM peers against yet.
+const CATEGORY_TABS = [
+  ['all',    'dm.categoryAll']    as const,
+  ['direct', 'dm.categoryDirect'] as const,
+  ['unread', 'dm.categoryUnread'] as const,
+];
+
+// Disappearing-message timer steps the composer chip cycles through (seconds
+// after the recipient reads; 0 = permanent). Wickr-style, kept playful.
+const BURN_STEPS = [0, 30, 60, 300, 3600, 86400] as const;
+
+// Admin announcements (e.g. "new build ready") often carry a plain-text URL
+// in the body — messages were previously rendered as inert <Text>, so the
+// link was there but not tappable (users had to manually select+copy it).
+const URL_RE = /https?:\/\/[^\s]+/;
+
+/** First http(s) URL found in a message body, or null. */
+export function extractUrl(body: string): string | null {
+  const m = body.match(URL_RE);
+  return m ? m[0] : null;
+}
+
+/** Compact human label for a burn duration: 30s · 1m · 5m · 1h · 24h. */
+export function burnLabel(secs: number): string {
+  if (secs < 60)    return `${secs}s`;
+  if (secs < 3600)  return `${Math.round(secs / 60)}m`;
+  return `${Math.round(secs / 3600)}h`;
+}
+
+/** Epoch ms for a server 'YYYY-MM-DD HH:MM:SS' UTC timestamp. */
+export function burnDeadlineMs(expiresAt: string): number {
+  return Date.parse(expiresAt.replace(' ', 'T') + 'Z');
+}
+
+/** Remaining-time label for a burning message ('4:59', '1h 12m'). */
+export function burnRemaining(expiresAt: string, nowMs: number): string {
+  const left = Math.max(0, Math.floor((burnDeadlineMs(expiresAt) - nowMs) / 1000));
+  if (left >= 3600) return `${Math.floor(left / 3600)}h ${Math.floor((left % 3600) / 60)}m`;
+  return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+}
+
+interface Props {
+  onBack: () => void;
+  /** Deep-link: open straight into this conversation (push-notification tap). */
+  initialThreadKey?: string | null;
+}
+
+/**
+ * Inbox — one unified messenger surface (2026-07-07). WhatsApp/Telegram style:
+ * a single conversation list holding the pinned official RealGram thread (the
+ * announcements we send) alongside user-to-user DM threads. Tapping any row
+ * opens the same chat-bubble view. A push-notification tap deep-links straight
+ * into its thread via `initialThreadKey`.
+ */
+export function InboxScreen({ onBack, initialThreadKey }: Props) {
+  const { t } = useT();
+  const insets      = useSafeAreaInsets();
+
+  // FAB "breathe" (theme pkg 02-chats.html: ".rg-btn--gold ... .rg-breathe").
+  const fabBreathe = useSharedValue(0);
+  useEffect(() => {
+    fabBreathe.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 1600, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1, true,
+    );
+  }, [fabBreathe]);
+  const fabStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + fabBreathe.value * 0.06 }],
+  }));
+
+  const user        = useAuthStore((s) => s.user);
+  const deviceId    = user?.deviceId ?? '';
+  const myId        = user?.userId ?? '';
+  const isVip       = isVipUser(user?.inviteCount ?? 0, user?.milestones ?? null);
+
+  // Audio calling (Khabat, 2026-07-28: "ikke bare når Inbox er åpen") —
+  // the connection + incoming-call listening now lives in callStore.ts,
+  // owned by CallManager at the root of AppNavigator so it rings
+  // regardless of which screen is open, not just this one. This screen
+  // only starts outgoing calls; premium-gated client-side (the real
+  // restriction, a two-account testing allowlist, is server-side per her
+  // (170) ask and isn't visible to this screen, so a premium-but-not-
+  // allowlisted account would still get a real error from placeCall —
+  // acceptable during this testing phase).
+  // Khabat, 2026-07-29: this used to ignore CALLING_ENABLED entirely, so the
+  // call icon kept showing (and doing nothing but toast) while calling was
+  // supposedly off app-wide — see config/featureFlags.ts's own note.
+  const canCall = CALLING_ENABLED && (user?.plan !== 'free' || !!user?.testMode);
+  const startCall = useCallStore((s) => s.startOutgoingCall);
+
+  // Direct messages
+  const dms           = useDMStore((s) => s.messages);
+  const dmRefresh     = useDMStore((s) => s.refresh);
+  const dmSend        = useDMStore((s) => s.send);
+  const dmMarkRead    = useDMStore((s) => s.markRead);
+  const dmDeleteMsg   = useDMStore((s) => s.deleteMessage);
+  const dmDeleteThread= useDMStore((s) => s.deleteThread);
+  const dmReact       = useDMStore((s) => s.react);
+  const sending       = useDMStore((s) => s.sending);
+
+  // Admin announcements (folded into the official thread)
+  const announcements = useInboxStore((s) => s.messages);
+  const annMarkRead   = useInboxStore((s) => s.markRead);
+  const refreshInbox  = useInboxStore((s) => s.refresh);
+
+  const [composeOpen, setCompose] = useState(false);
+  const [recipient, setRecipient] = useState('');
+  const [draft, setDraft]         = useState('');
+  const [openKey, setOpenKey]     = useState<string | null>(null);
+  const [showPeerProfile, setShowPeerProfile] = useState(false);
+  const [threadDraft, setThreadDraft] = useState('');
+  const [burnSecs, setBurnSecs]   = useState(0);   // composer disappearing-timer
+  const [nowMs, setNowMs]         = useState(Date.now());
+  const [reactingTo, setReactingTo] = useState<number | null>(null);
+  const [peerTyping, setPeerTyping] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  // Thread header overflow menu (Khabat, 2026-07-29: "ganske trang på toppen
+  // av tråden med slett, blokker, call, profil id" — folds Block/Delete into
+  // a single "..." menu, Telegram/WhatsApp-style, instead of three
+  // always-visible icons crowding the header next to the peer name).
+  const threadMenuBtnRef = useRef<View>(null);
+  const [threadMenuOpen, setThreadMenuOpen] = useState(false);
+  const [threadMenuPos, setThreadMenuPos] = useState(THREAD_MENU_FALLBACK_POS);
+  // Peer action popup (Khabat, 2026-07-30: "når jeg trykker på andre
+  // personens navn/id i chatten så kommer det en popup, der kan det også
+  // vises knapp for video og audio call + se profil") — same consolidation
+  // reasoning as the overflow menu above ("ganske trang på toppen"):
+  // 📞/📹 had just been added as two more standalone header icons this same
+  // session, which put the header right back into the crowded state that
+  // comment describes. Folded them (+ the profile shortcut) into one
+  // tap-the-name popup instead of a 3rd/4th always-visible icon; the avatar
+  // tap above still jumps straight to the full profile sheet as its own
+  // shortcut, unchanged.
+  const peerMenuAnchorRef = useRef<View>(null);
+  const [peerMenuOpen, setPeerMenuOpen] = useState(false);
+  const [peerMenuPos, setPeerMenuPos] = useState(THREAD_MENU_FALLBACK_POS);
+  // Category tabs (theme pkg 02-chats.html: "All/Clan/Direct/Unread tabs").
+  // "Clan" isn't here — there's no real clan-member-ID list to cross-
+  // reference DM peers against yet, so a "Clan" tab would just be an empty
+  // shelf or a guess. All/Direct/Unread are 100% real distinctions the
+  // data already supports.
+  const [category, setCategory] = useState<'all' | 'direct' | 'unread'>('all');
+
+  // Tick once a second while the open thread contains disappearing messages,
+  // so burn countdowns run and expired bubbles vanish without waiting for the
+  // next server poll. No burning messages -> no timer at all.
+  const hasBurning = !!openKey && dms.some(m => (m.expireSecs ?? 0) > 0);
+  useEffect(() => {
+    if (!hasBurning) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [hasBurning]);
+
+  const cycleBurn = () => {
+    const i = BURN_STEPS.indexOf(burnSecs as (typeof BURN_STEPS)[number]);
+    const next = BURN_STEPS[(i + 1) % BURN_STEPS.length] ?? 0;
+    setBurnSecs(next);
+    useToastStore.getState().show(
+      next === 0 ? `⏱ ${t('dm.burnOff')}` : `🔥 ${t('dm.burnSet').replace('{t}', burnLabel(next))}`,
+      'info', 1800,
+    );
+  };
+
+  /** True once a burning message's post-read timer has run out (hide locally —
+   *  the server hard-deletes it on its side). */
+  const isBurned = (m: ChatMessage) =>
+    !!m.expiresAt && burnDeadlineMs(m.expiresAt) <= nowMs;
+
+  const supportName = t('dm.support');
+  const conversations = useMemo(
+    () => buildConversations(dms, announcements, supportName, myId),
+    [dms, announcements, supportName, myId],
+  );
+
+  // Quick-access contact strip (theme pkg's "online story-strip") — real
+  // recent contacts, not fake stories/presence. conversations is already
+  // recency-sorted (unifiedThreads.ts); take the first few real peers.
+  // Deliberately NOT claiming anyone is "online" — there's no presence
+  // signal anywhere in this app, so no presence ring/dot here, unlike the
+  // mockup's .presence.on/.off (flagged as a real backend gap, not built).
+  const recentContacts = useMemo(
+    () => conversations.filter((c) => !c.support).slice(0, 6),
+    [conversations],
+  );
+
+  // Category tab, applied before search.
+  const categorized = useMemo(() => {
+    if (category === 'direct') return conversations.filter((c) => !c.support);
+    if (category === 'unread') return conversations.filter((c) => c.unread > 0);
+    return conversations;
+  }, [conversations, category]);
+
+  // Message search (2026-07-22) — entirely client-side: every message the
+  // conversation list already has locally (title + full message bodies), no
+  // new backend call. A conversation matches if its title matches, or any
+  // message in it does.
+  const filteredConversations = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return categorized;
+    return categorized.filter((c) =>
+      c.title.toLowerCase().includes(q) ||
+      c.messages.some((m) => m.body.toLowerCase().includes(q)));
+  }, [categorized, searchQuery]);
+
+  // Server-side search fallback (2026-07-22, chat audit bug #2) — the filter
+  // above only ever sees the locally-cached 200-message window, so anything
+  // older is silently unsearchable. Debounced (400ms) so it doesn't fire a
+  // request per keystroke; results are merged in below as a distinct section
+  // rather than replacing the instant local results, since local stays
+  // faster for anything already cached.
+  const [serverSearchResults, setServerSearchResults] = useState<Awaited<ReturnType<typeof searchMessages>>>([]);
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q || !deviceId) { setServerSearchResults([]); return; }
+    let cancelled = false;
+    const id = setTimeout(() => {
+      searchMessages(deviceId, q).then((r) => { if (!cancelled) setServerSearchResults(r); }).catch(() => {});
+    }, 400);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [searchQuery, deviceId]);
+
+  // Server hits not already covered by a locally-cached conversation — these
+  // are specifically the "beyond the 200-window" matches bug #2 was about.
+  const extraServerResults = useMemo(() => {
+    if (!serverSearchResults.length) return [];
+    const localIds = new Set<number>();
+    conversations.forEach((c) => c.messages.forEach((m) => { if (m.kind === 'dm') localIds.add(m.id); }));
+    return serverSearchResults.filter((r) => !localIds.has(r.id));
+  }, [serverSearchResults, conversations]);
+
+  const openSearchResult = (r: (typeof extraServerResults)[number]) => {
+    // The overwhelming common case: this peer has *some* recent message too,
+    // so a real Conversation already exists locally — open it (its own
+    // "load older" button, bug #1's fix, reaches the rest of the history).
+    const existing = conversations.find((c) => !c.support && (
+      (!!r.peerUserId && c.peerUserId === r.peerUserId) || (!!r.peerDevice && c.peerDevice === r.peerDevice)
+    ));
+    if (existing) { setSearchOpen(false); setSearchQuery(''); openConvoView(existing); return; }
+    // Rare edge case: literally every message from this peer is older than
+    // the 200-window, so there's no local conversation entry point at all.
+    // Not building a full ad-hoc-thread UI for this narrow case (out of
+    // today's scope) — tell the user plainly rather than a silent dead end.
+    useToastStore.getState().show(t('dm.searchResultNoThread'), 'info');
+  };
+
+  const openConvo = openKey ? conversations.find(c => c.key === openKey) ?? null : null;
+  const openPeer  = !openConvo?.support ? (openConvo?.peerUserId || openConvo?.peerDevice || '') : '';
+
+  // "Load older messages" pagination (2026-07-22, chat audit bug #1) — the
+  // store's own `messages` (dms) is a combined-all-threads 200 cap, so a
+  // thread's full history can silently be missing beyond that window. These
+  // hold whatever's been fetched *beyond* that window for the currently open
+  // thread only; reset whenever the open thread changes. Kept out of the
+  // persisted dmStore on purpose — this is scoped to "the thread you have
+  // open right now", not something that needs to survive an app restart.
+  const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
+  const [loadingOlder, setLoadingOlder]   = useState(false);
+  const [noMoreOlder, setNoMoreOlder]     = useState(false);
+  useEffect(() => {
+    setOlderMessages([]);
+    setLoadingOlder(false);
+    setNoMoreOlder(false);
+  }, [openKey]);
+
+  // Older-loaded + store-cached messages, oldest first — what the thread
+  // actually renders. Safe across dmRefresh polls: olderMessages only ever
+  // holds ids strictly below anything the 200-window has ever contained for
+  // this thread, so a refresh replacing `dms` can't invalidate it.
+  const threadMessages = useMemo(
+    () => [...olderMessages, ...(openConvo?.messages ?? [])],
+    [olderMessages, openConvo],
+  );
+
+  // Scroll the open thread to its latest message (Khabat, 2026-07-27: thread
+  // opened mid-conversation instead of landing on the newest message). This
+  // is a plain ScrollView (not a FlatList), so there's no built-in "stick to
+  // bottom" -- it renders at scroll offset 0 (the oldest message) by default.
+  // Keyed on the LAST message's key, not threadMessages.length: loadOlderMessages
+  // prepends older history to the front, which changes the array length/first
+  // entry but never the last one, so that case intentionally does not
+  // re-trigger a jump-to-bottom and blow away the user's reading position.
+  const threadScrollRef = useRef<ScrollView>(null);
+  const lastScrollKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openKey) { lastScrollKeyRef.current = null; return; }
+    const tailKey = threadMessages[threadMessages.length - 1]?.key ?? '';
+    const scrollKey = `${openKey}:${tailKey}`;
+    if (scrollKey === lastScrollKeyRef.current) return;
+    const isNewThread = lastScrollKeyRef.current?.split(':')[0] !== openKey;
+    lastScrollKeyRef.current = scrollKey;
+    requestAnimationFrame(() => {
+      threadScrollRef.current?.scrollToEnd({ animated: !isNewThread });
+    });
+  }, [openKey, threadMessages]);
+
+  const loadOlderMessages = async () => {
+    if (!openConvo || openConvo.support || loadingOlder || noMoreOlder || !openPeer) return;
+    const oldestDm = threadMessages.find(m => m.kind === 'dm');
+    if (!oldestDm) return;
+    setLoadingOlder(true);
+    try {
+      const older = await listThreadMessages(deviceId, openPeer, oldestDm.id, 50);
+      if (older.length === 0) { setNoMoreOlder(true); return; }
+      // Server returns newest-first (same contract as list-messages);
+      // ChatMessage[]/Conversation.messages is oldest-first, so reverse
+      // before prepending.
+      const chats = older.map(dmToChat).reverse();
+      setOlderMessages(prev => [...chats, ...prev]);
+      if (older.length < 50) setNoMoreOlder(true);
+    } catch (e) {
+      Logger.warn('InboxScreen', `loadOlderMessages failed: ${e}`);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  // Typing indicator (2026-07-22) — poll while a DM thread is open (not
+  // Support, which isn't a live peer). Cheap GET, same cadence as the
+  // burn-countdown tick would be, but only while it's actually useful.
+  useEffect(() => {
+    if (!deviceId || !openPeer) { setPeerTyping(false); return; }
+    let cancelled = false;
+    const poll = () => apiGetTyping(deviceId, openPeer).then((v) => { if (!cancelled) setPeerTyping(v); }).catch(() => {});
+    poll();
+    const id = setInterval(poll, 2500);
+    return () => { cancelled = true; clearInterval(id); setPeerTyping(false); };
+  }, [deviceId, openPeer]);
+
+  // Tell the peer we're typing — fire-and-forget, debounced to once per 2.5s
+  // rather than every keystroke (the server treats it as a cheap upsert, but
+  // no reason to hammer it on every character).
+  const lastTypingPingRef = useRef(0);
+  // Bug fix 2026-07-22 (chat audit #4): this ref was shared across every
+  // thread with no reset, so switching to a new peer within 2.5s of typing
+  // in the last one silently suppressed the first ping to the new peer --
+  // they wouldn't see "typing..." for up to 2.5s longer than they should.
+  useEffect(() => { lastTypingPingRef.current = 0; }, [openPeer]);
+  const pingTyping = () => {
+    if (!deviceId || !openPeer) return;
+    const now = Date.now();
+    if (now - lastTypingPingRef.current < 2500) return;
+    lastTypingPingRef.current = now;
+    apiSetTyping(deviceId, openPeer).catch(() => {});
+  };
+
+  // Mark a conversation's unread incoming messages read. The Support thread
+  // mixes DM + announcement messages, so ack each via its own store path.
+  const markConvoRead = (c: Conversation) => {
+    c.messages.forEach(m => {
+      if (m.direction === 'in' && !m.read) {
+        if (m.kind === 'ann') annMarkRead(deviceId, m.id);
+        else                  dmMarkRead(deviceId, m.id);
+      }
+    });
+  };
+
+  const openConvoView = (c: Conversation) => {
+    markConvoRead(c);
+    setThreadDraft('');
+    setOpenKey(c.key);
+  };
+
+  const sendInThread = async () => {
+    const body = threadDraft.trim();
+    if (!body || !openConvo) return;
+    // Support replies address the support account; DM replies address the peer.
+    const peer = openConvo.peerUserId || openConvo.peerDevice || '';
+    if (!peer) return;
+    try {
+      await dmSend(deviceId, peer, body, burnSecs);
+      setThreadDraft('');
+    } catch (e: any) {
+      Alert.alert('', String(e?.message ?? 'Error'));
+    }
+  };
+
+  const confirmDeleteThread = (c: Conversation) => {
+    if (c.support) return;    // the Support thread is not deletable
+    Alert.alert(t('dm.deleteThread'), t('dm.deleteChatConfirm'), [
+      { text: t('dm.cancel'), style: 'cancel' },
+      { text: t('dm.deleteThread'), style: 'destructive', onPress: () => {
+        dmDeleteThread(deviceId, c.peerDevice || '');
+        setOpenKey(null);
+      } },
+    ]);
+  };
+
+  const confirmDeleteMessage = (c: Conversation, m: ChatMessage) => {
+    if (c.support || m.kind === 'ann') return;   // support / announcements aren't deletable
+    Alert.alert(t('dm.deleteMessage'), t('dm.deleteMsgConfirm'), [
+      { text: t('dm.cancel'), style: 'cancel' },
+      { text: t('dm.deleteMessage'), style: 'destructive', onPress: () => dmDeleteMsg(deviceId, m.id) },
+    ]);
+  };
+
+  // Khabat, 2026-07-24: report an abusive message. Own messages (m.direction
+  // === 'out') skip straight to delete — reporting your own message makes no
+  // sense — real incoming DMs get a Report option ahead of Delete. Support
+  // thread is excluded entirely (confirmDeleteMessage's own guard already
+  // blocks it; kept consistent here for the same reason — nothing to report
+  // on an official channel).
+  const handleMessageLongPress = (c: Conversation, m: ChatMessage) => {
+    if (c.support || m.kind === 'ann') return;
+    if (m.direction === 'out') { confirmDeleteMessage(c, m); return; }
+    Alert.alert('', undefined, [
+      { text: 'Report', style: 'destructive', onPress: () => confirmReportMessage(c, m) },
+      { text: t('dm.deleteMessage'), style: 'destructive', onPress: () => confirmDeleteMessage(c, m) },
+      { text: t('dm.cancel'), style: 'cancel' },
+    ]);
+  };
+
+  const confirmReportMessage = (c: Conversation, m: ChatMessage) => {
+    Alert.alert('Report message', 'Why are you reporting this?', [
+      { text: 'Spam', onPress: () => submitReport(m.id, 'spam') },
+      { text: 'Harassment/abuse', onPress: () => submitReport(m.id, 'harassment') },
+      { text: 'Other', onPress: () => submitReport(m.id, 'other') },
+      { text: t('dm.cancel'), style: 'cancel' },
+    ]);
+  };
+
+  const submitReport = (messageId: number, reason: DMReportReason) => {
+    reportMessage(deviceId, messageId, reason)
+      .then(() => Alert.alert('', 'Reported — thanks, we’ll take a look.'))
+      .catch((e: any) => Alert.alert('', String(e?.message ?? 'Could not send report')));
+  };
+
+  const confirmBlockUser = (c: Conversation) => {
+    if (c.support) return;    // can't block the official support account
+    const peer = c.peerUserId || c.peerDevice || '';
+    if (!peer) return;
+    Alert.alert(
+      `Block ${c.title}?`,
+      'They won’t be able to message you, and you won’t be able to message them. You can unblock later from Settings.',
+      [
+        { text: t('dm.cancel'), style: 'cancel' },
+        {
+          text: t('dm.blockUser'), style: 'destructive',
+          onPress: () => {
+            blockUser(deviceId, peer)
+              .then(() => { setOpenKey(null); })
+              .catch((e: any) => Alert.alert('', String(e?.message ?? 'Could not block')));
+          },
+        },
+      ],
+    );
+  };
+
+  useEffect(() => {
+    if (!deviceId) return;
+    dmRefresh(deviceId).catch(() => {});
+    refreshInbox(deviceId).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deep-link: when arriving from a notification tap, auto-open the target
+  // thread once the conversation exists. Retries as data loads in.
+  useEffect(() => {
+    if (!initialThreadKey) return;
+    const target = conversations.find(c => c.key === initialThreadKey);
+    if (target) openConvoView(target);
+  }, [initialThreadKey, conversations]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submit = async () => {
+    const to = recipient.trim();
+    const body = draft.trim();
+    if (!to)   { Alert.alert('', t('dm.recipientRequired')); return; }
+    if (!body) { Alert.alert('', t('dm.messageRequired'));   return; }
+    try {
+      await dmSend(deviceId, to, body);
+      setCompose(false);
+      setRecipient('');
+      setDraft('');
+      useToastStore.getState().show(`✅ ${t('dm.sentToast')}`, 'success');
+    } catch (e: any) {
+      Alert.alert('', String(e?.message ?? 'Error'));
+    }
+  };
+
+  // Node contacts (raw device IDs, e.g. "SL-227-…") get the 📡 network
+  // avatar instead of a face-initial — theme pkg's own rule since the
+  // very first read of 04-PAGE-THEMES.md, missed in the Phase 4 pass
+  // (that pass only worked from the summary table, not the fuller
+  // 02-chats.html reference Khabat later uploaded directly). Real signal,
+  // not a guess: a conversation is "node-shaped" exactly when it has no
+  // real username at all — buildConversations() falls back to the raw
+  // peerDevice string as the title only in that case.
+  const Avatar = ({ support, label, isNode, size = 44 }: { support: boolean; label: string; isNode?: boolean; size?: number }) => (
+    support ? (
+      <View style={[styles.avatar, styles.avatarOfficial, { width: size, height: size, borderRadius: size / 2 }]}>
+        <Image source={REALGRAM_LOGO} style={{ width: size * 0.6, height: size * 0.6, resizeMode: 'contain' }} />
+      </View>
+    ) : isNode ? (
+      <View style={[styles.avatar, styles.avatarNode, { width: size, height: size, borderRadius: size / 2 }]}>
+        <Text style={{ fontSize: size * 0.4 }}>📡</Text>
+      </View>
+    ) : (
+      <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
+        <Text style={styles.avatarText}>{(label || '?').slice(0, 1).toUpperCase()}</Text>
+      </View>
+    )
+  );
+
+  return (
+    <View style={styles.screen}>
+      <EmberField count={6} />
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn} activeOpacity={0.7} onPress={onBack}
+          hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+        >
+          <Text style={styles.backIcon}>‹</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>{t('pr.inbox')}</Text>
+        <TouchableOpacity
+          style={styles.searchBtn}
+          activeOpacity={0.7}
+          onPress={() => { setSearchOpen((v) => !v); if (searchOpen) setSearchQuery(''); }}
+        >
+          <Text style={styles.searchBtnText}>{searchOpen ? '✕' : '🔍'}</Text>
+        </TouchableOpacity>
+        <Animated.View style={fabStyle}>
+          <TouchableOpacity style={styles.newBtn} activeOpacity={0.8} onPress={() => setCompose(true)}>
+            <Text style={styles.newBtnText}>✎</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+
+      {searchOpen && (
+        <View style={styles.searchBar}>
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t('dm.searchPlaceholder')}
+            placeholderTextColor={Colors.text.muted}
+            autoFocus
+          />
+        </View>
+      )}
+
+      {!searchOpen && recentContacts.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.contactStrip}
+          contentContainerStyle={styles.contactStripContent}
+        >
+          {recentContacts.map((c) => (
+            <TouchableOpacity
+              key={c.key}
+              style={styles.contactChip}
+              activeOpacity={0.75}
+              onPress={() => openConvoView(c)}
+            >
+              <View style={styles.contactRing}>
+                <Avatar
+                  support={false}
+                  label={c.title}
+                  isNode={!c.peerUserId && !!c.peerDevice}
+                  size={48}
+                />
+              </View>
+              <Text style={styles.contactName} numberOfLines={1}>{c.title}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {!searchOpen && (
+        <View style={styles.categoryTabs}>
+          {CATEGORY_TABS.map(([cat, labelKey]) => (
+            <TouchableOpacity
+              key={cat}
+              style={[styles.categoryTab, category === cat && styles.categoryTabActive]}
+              onPress={() => setCategory(cat)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.categoryTabText, category === cat && styles.categoryTabTextActive]}>
+                {t(labelKey)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Unified conversation list */}
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {filteredConversations.length === 0 ? (
+          <GlassCard style={styles.emptyCard}>
+            <Text style={styles.emptyIcon}>💬</Text>
+            <Text style={styles.emptyText}>{searchQuery ? t('dm.noSearchResults') : t('dm.empty')}</Text>
+          </GlassCard>
+        ) : (
+          filteredConversations.map((c) => {
+            const preview = !c.latest
+              ? t('dm.supportIntro')
+              : c.latest.direction === 'out'
+                ? `${t('dm.you')}: ${c.latest.body}`
+                : c.latest.title
+                  ? `${c.latest.title} — ${c.latest.body}`
+                  : c.latest.body;
+            return (
+              <TouchableOpacity
+                key={c.key}
+                testID={`convo-${c.key}`}
+                style={[styles.item, c.unread > 0 && styles.itemUnread]}
+                activeOpacity={0.8}
+                onPress={() => openConvoView(c)}
+                onLongPress={() => confirmDeleteThread(c)}
+              >
+                <Avatar support={c.support} label={c.title} isNode={!c.support && !c.peerUserId && !!c.peerDevice} />
+                <View style={styles.itemMain}>
+                  <View style={styles.itemHeader}>
+                    <Text style={[styles.itemTitle, c.unread > 0 && styles.itemTitleUnread]} numberOfLines={1}>
+                      {c.title}
+                    </Text>
+                    {(c.support || c.peerBadge.verified) && (
+                      <View style={styles.verifiedBadge}><Text style={styles.verifiedText}>✓</Text></View>
+                    )}
+                    {c.peerBadge.isVip && <VipBadge compact />}
+                    {!!c.latest && <Text style={styles.itemDate}>{c.latest.createdAt.slice(5, 16)}</Text>}
+                  </View>
+                  <View style={styles.threadPreviewRow}>
+                    <Text style={styles.itemBody} numberOfLines={1}>{preview}</Text>
+                    {c.unread > 0 && (
+                      <View style={styles.unreadBadge}><Text style={styles.unreadBadgeText}>{c.unread}</Text></View>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
+
+        {/* Server-side search fallback results (2026-07-22, chat audit bug
+            #2) — matches found on the server that aren't in any locally
+            cached conversation above (i.e. older than the 200-window). */}
+        {extraServerResults.length > 0 && (
+          <>
+            <Text style={styles.moreResultsLabel}>{t('dm.moreResults')}</Text>
+            {extraServerResults.map((r) => (
+              <TouchableOpacity
+                key={`search-${r.id}`}
+                style={styles.item}
+                activeOpacity={0.8}
+                onPress={() => openSearchResult(r)}
+              >
+                <Avatar support={false} label={r.peerUserId || r.peerDevice} isNode={!r.peerUserId && !!r.peerDevice} />
+                <View style={styles.itemMain}>
+                  <View style={styles.itemHeader}>
+                    <Text style={styles.itemTitle} numberOfLines={1}>{r.peerUserId || r.peerDevice}</Text>
+                    <Text style={styles.itemDate}>{r.createdAt.slice(5, 16)}</Text>
+                  </View>
+                  <Text style={styles.itemBody} numberOfLines={1}>{r.body}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+
+        {/* This screen has no self-rendered <BottomNav> — the Tab.Navigator's
+            floating tabBar overlay (AppNavigator.tsx) supplies it instead, so
+            without this the last row sits behind it (same bug reported on
+            RealGramClanScreen, 2026-07-23 — same fix applied here). */}
+        <View style={{ height: BottomNav.CONTENT_HEIGHT + insets.bottom + Spacing[4] }} />
+      </ScrollView>
+
+      {/* Chat thread modal — Telegram-style conversation for DMs + official */}
+      <Modal testID="convo-modal" visible={!!openConvo} transparent animationType="slide" onRequestClose={() => setOpenKey(null)}>
+        <KeyboardAvoidingView
+          style={styles.threadRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {!!openConvo && (
+            <View style={styles.threadCard}>
+              {/* Thread header: back + avatar + peer/official name+status only.
+                  Block/Delete live in the overflow menu below (Khabat,
+                  2026-07-29: this row used to also carry Call/Block/Delete
+                  as three always-visible icons — "ganske trang på toppen av
+                  tråden" — folded down to Telegram/WhatsApp's own pattern of
+                  name+status up front, secondary actions behind "...". Call
+                  stays a direct icon (not buried) only while it's actually
+                  usable, see CALLING_ENABLED.
+                  Khabat, 2026-07-31: Call/Video/profile were still unreachable
+                  for the Support thread despite the 2026-07-29 intent above —
+                  the peer-name tap that opens this menu, and the menu Modal
+                  itself, were BOTH still gated on `openConvo.support`, so the
+                  menu could never open at all. Fixed for the two Iran
+                  testers: Support (SUPPORT_USER_ID — unifiedThreads.ts — is
+                  Khabat's own account/device during this testing phase, so
+                  every DM with her is folded into the pinned Support thread
+                  client-side, per buildConversations()) is now reachable the
+                  same as any other peer — Call/Video/see-profile all fall
+                  back to `peerUserId` when there's no `peerDevice`, same
+                  pattern startCall() already used. Only Block/Delete (the
+                  separate "..." overflow menu below) stay hidden for
+                  Support — you can't block support. */}
+              <View style={styles.threadHeader}>
+                <TouchableOpacity
+                  style={styles.backBtn} activeOpacity={0.7} onPress={() => setOpenKey(null)}
+                  hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+                >
+                  <Text style={styles.backIcon}>‹</Text>
+                </TouchableOpacity>
+                {/* Khabat, 2026-07-29: "trykker på profilbilde til sender... se
+                    deres realgram profil" — tappable for any peer we can
+                    resolve a profile for, DM or Support alike (falls back to
+                    peerUserId — Support's SUPPORT_USER_ID is itself a real
+                    device_id, see get-peer-profile in api.php). */}
+                <TouchableOpacity
+                  disabled={!openConvo.peerDevice && !openConvo.peerUserId}
+                  onPress={() => setShowPeerProfile(true)}
+                  activeOpacity={0.7}
+                >
+                  <Avatar
+                    support={openConvo.support}
+                    label={openConvo.title}
+                    isNode={!openConvo.support && !openConvo.peerUserId && !!openConvo.peerDevice}
+                    size={34}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  ref={peerMenuAnchorRef}
+                  style={styles.threadPeerWrap}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    // Khabat, 2026-07-31: "hopper knappen eller popup'en bare,
+                    // så får ikke ringt" — the Support-thread menu is now
+                    // reachable (was gated on `openConvo.support` before), and
+                    // testing it live surfaced a real bug in this open logic:
+                    // opening the Modal immediately at THREAD_MENU_FALLBACK_POS
+                    // and only correcting it once measureInWindow's async
+                    // callback resolves visibly moves the menu (and whatever
+                    // row a finger was about to land on) mid-gesture, so the
+                    // tap can miss onto the full-screen backdrop and just
+                    // close it instead of hitting Call/Video. Measure first,
+                    // open once — the menu now only ever renders at its real
+                    // position, no fallback-then-jump.
+                    peerMenuAnchorRef.current?.measureInWindow((x, y, width, height) => {
+                      const screenWidth = Dimensions.get('window').width;
+                      setPeerMenuPos({ top: y + height + 6, right: screenWidth - (x + width) });
+                      setPeerMenuOpen(true);
+                    });
+                  }}
+                >
+                  <View style={styles.threadPeerRow}>
+                    <Text style={styles.threadPeer} numberOfLines={1}>{openConvo.title}</Text>
+                    {(openConvo.support || openConvo.peerBadge.verified) && (
+                      <View style={styles.verifiedBadge}><Text style={styles.verifiedText}>✓</Text></View>
+                    )}
+                    {openConvo.peerBadge.isVip && <VipBadge compact />}
+                  </View>
+                  {openConvo.support ? (
+                    <Text style={styles.threadSubtitle}>{t('dm.supportTag')}</Text>
+                  ) : (
+                    // Khabat, 2026-07-30: the call button "jumping" mid-test —
+                    // this line used to only mount when peerTyping was true, so
+                    // every 2.5s typing-poll toggle changed threadHeader's
+                    // content height and re-centered the whole row (including
+                    // the call button) vertically. Always rendering the Text
+                    // (with a non-empty placeholder so line-height doesn't
+                    // collapse) keeps the header's height constant regardless
+                    // of typing state.
+                    <Text style={styles.threadSubtitle} numberOfLines={1}>{peerTyping ? t('dm.typing') : ' '}</Text>
+                  )}
+                </TouchableOpacity>
+                {!openConvo.support && (
+                  <TouchableOpacity
+                    ref={threadMenuBtnRef}
+                    testID="convo-menu"
+                    style={styles.threadDeleteBtn}
+                    activeOpacity={0.7}
+                    accessibilityLabel={t('dm.moreOptions')}
+                    onPress={() => {
+                      // Same fallback-then-jump fix as the peer-menu open
+                      // handler above — measure first, open once.
+                      threadMenuBtnRef.current?.measureInWindow((x, y, width, height) => {
+                        const screenWidth = Dimensions.get('window').width;
+                        setThreadMenuPos({ top: y + height + 6, right: screenWidth - (x + width) });
+                        setThreadMenuOpen(true);
+                      });
+                    }}
+                  >
+                    <Text style={styles.threadDeleteIcon}>⋮</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {!openConvo.support && (
+                <Modal visible={threadMenuOpen} transparent animationType="fade" onRequestClose={() => setThreadMenuOpen(false)}>
+                  <TouchableOpacity
+                    style={StyleSheet.absoluteFillObject}
+                    activeOpacity={1}
+                    onPress={() => setThreadMenuOpen(false)}
+                  >
+                    <View style={[styles.threadMenu, { top: threadMenuPos.top, right: threadMenuPos.right }]}>
+                      <TouchableOpacity
+                        testID="convo-block"
+                        style={styles.threadMenuRow}
+                        activeOpacity={0.7}
+                        onPress={() => { setThreadMenuOpen(false); confirmBlockUser(openConvo); }}
+                      >
+                        <Text style={styles.threadMenuIcon}>🚫</Text>
+                        <Text style={styles.threadMenuLabel}>{t('dm.blockUser')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        testID="convo-delete"
+                        style={[styles.threadMenuRow, styles.threadMenuRowLast]}
+                        activeOpacity={0.7}
+                        onPress={() => { setThreadMenuOpen(false); confirmDeleteThread(openConvo); }}
+                      >
+                        <Text style={styles.threadMenuIcon}>🗑</Text>
+                        <Text style={[styles.threadMenuLabel, styles.threadMenuDestructive]}>{t('dm.deleteThread')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                </Modal>
+              )}
+
+              <Modal visible={peerMenuOpen} transparent animationType="fade" onRequestClose={() => setPeerMenuOpen(false)}>
+                <TouchableOpacity
+                  style={StyleSheet.absoluteFillObject}
+                  activeOpacity={1}
+                  onPress={() => setPeerMenuOpen(false)}
+                >
+                  <View style={[styles.threadMenu, { top: peerMenuPos.top, right: peerMenuPos.right }]}>
+                    {canCall && (
+                      <TouchableOpacity
+                        testID="convo-video-call"
+                        style={styles.threadMenuRow}
+                        activeOpacity={0.7}
+                        onPress={() => { setPeerMenuOpen(false); startCall(openConvo.peerDevice || openConvo.peerUserId || '', openConvo.title, true); }}
+                      >
+                        <Text style={styles.threadMenuIcon}>📹</Text>
+                        <Text style={styles.threadMenuLabel}>{t('call.startVideo')}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {canCall && (
+                      <TouchableOpacity
+                        testID="convo-call"
+                        style={styles.threadMenuRow}
+                        activeOpacity={0.7}
+                        onPress={() => { setPeerMenuOpen(false); startCall(openConvo.peerDevice || openConvo.peerUserId || '', openConvo.title); }}
+                      >
+                        <Text style={styles.threadMenuIcon}>📞</Text>
+                        <Text style={styles.threadMenuLabel}>{t('call.start')}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {(!!openConvo.peerDevice || !!openConvo.peerUserId) && (
+                      <TouchableOpacity
+                        testID="convo-see-profile"
+                        style={[styles.threadMenuRow, styles.threadMenuRowLast]}
+                        activeOpacity={0.7}
+                        onPress={() => { setPeerMenuOpen(false); setShowPeerProfile(true); }}
+                      >
+                        <Text style={styles.threadMenuIcon}>👤</Text>
+                        <Text style={styles.threadMenuLabel}>{t('inbox.seeProfile')}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </Modal>
+
+              {/* Ad banner — Khabat, 2026-07-24: AdMob showed on Freedom/Home
+                  but not here; support threads are the one Inbox surface it's
+                  safe to place an ad on (never inside a real person-to-person
+                  DM thread). */}
+              {openConvo.support && (
+                <AdBanner
+                  show={user?.plan === 'free' || !!user?.testMode}
+                  slot="inbox_banner"
+                  style={styles.threadAdBanner}
+                />
+              )}
+
+              {/* Conversation */}
+              <ScrollView
+                ref={threadScrollRef}
+                style={styles.threadScroll}
+                contentContainerStyle={styles.threadScrollContent}
+              >
+                {/* Support thread opens with a pinned intro note (localized). */}
+                {openConvo.support && (
+                  <View style={styles.introNote}>
+                    <Text style={styles.introText}>{t('dm.supportIntro')}</Text>
+                  </View>
+                )}
+                {/* "Load older messages" (2026-07-22, chat audit bug #1) — a
+                    button rather than silent infinite-scroll-on-drag: this is
+                    a ScrollView, not a FlatList, so there's no onEndReached to
+                    hook, and a visible button also makes it obvious to the
+                    user that older history exists and is one tap away, rather
+                    than messages just quietly appearing. */}
+                {!openConvo.support && !noMoreOlder && threadMessages.some(m => m.kind === 'dm') && (
+                  <TouchableOpacity
+                    style={styles.loadOlderBtn}
+                    activeOpacity={0.7}
+                    onPress={loadOlderMessages}
+                    disabled={loadingOlder}
+                  >
+                    {loadingOlder
+                      ? <ActivityIndicator size="small" color={Colors.text.secondary} />
+                      : <Text style={styles.loadOlderText}>{t('dm.loadOlder')}</Text>}
+                  </TouchableOpacity>
+                )}
+                {threadMessages.filter(m => !isBurned(m)).map((m) => {
+                  const out = m.direction === 'out';
+                  const burning = (m.expireSecs ?? 0) > 0;
+                  const canReact = m.kind === 'dm';
+                  const reactionEntries = Object.entries(m.reactions ?? {}).filter(([, n]) => n > 0);
+                  return (
+                    <View key={m.key}>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => canReact && setReactingTo(reactingTo === m.id ? null : m.id)}
+                        onLongPress={() => handleMessageLongPress(openConvo, m)}
+                        style={[styles.bubbleRow, out ? styles.bubbleRowOut : styles.bubbleRowIn]}
+                      >
+                        <View style={[styles.bubble, out ? styles.bubbleOut : styles.bubbleIn, burning && styles.bubbleBurn]}>
+                          {!!m.title && <Text style={styles.bubbleTitle}>{m.title}</Text>}
+                          <Text style={[styles.bubbleText, out && styles.bubbleTextOut]}>{m.body}</Text>
+                          {(() => {
+                            const url = extractUrl(m.body);
+                            if (!url) return null;
+                            return (
+                              <TouchableOpacity
+                                style={styles.bubbleLinkBtn}
+                                activeOpacity={0.75}
+                                onPress={() => Linking.openURL(url).catch(() => {})}
+                              >
+                                <Text style={styles.bubbleLinkText}>🔗 {t('dm.openLink')}</Text>
+                              </TouchableOpacity>
+                            );
+                          })()}
+                          {burning && (
+                            <Text style={styles.burnNote}>
+                              🔥 {m.expiresAt
+                                ? t('dm.burnLeft').replace('{t}', burnRemaining(m.expiresAt, nowMs))
+                                : t('dm.burnPending').replace('{t}', burnLabel(m.expireSecs ?? 0))}
+                            </Text>
+                          )}
+                          <Text style={[styles.bubbleTime, out && styles.bubbleTimeOut]}>{m.createdAt.slice(11, 16)}</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      {reactionEntries.length > 0 && (
+                        <View style={[styles.reactionBadgeRow, out ? styles.bubbleRowOut : styles.bubbleRowIn]}>
+                          {reactionEntries.map(([emoji, count]) => (
+                            <TouchableOpacity
+                              key={emoji}
+                              style={[styles.reactionBadge, m.myReaction === emoji && styles.reactionBadgeMine]}
+                              onPress={() => dmReact(deviceId, m.id, emoji)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.reactionBadgeText}>{emoji} {count}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+
+                      {canReact && reactingTo === m.id && (
+                        <View style={[styles.reactionPickerRow, out ? styles.reactionPickerOut : styles.reactionPickerIn]}>
+                          {DM_REACTIONS.map((emoji) => (
+                            <TouchableOpacity
+                              key={emoji}
+                              style={styles.reactionPickerBtn}
+                              onPress={() => { dmReact(deviceId, m.id, emoji); setReactingTo(null); }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.reactionPickerEmoji}>{emoji}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Reply input — two-way for both Support and DM threads */}
+              <View style={styles.threadInputRow}>
+                <TouchableOpacity
+                  testID="convo-burn"
+                  style={[styles.burnChip, burnSecs > 0 && styles.burnChipOn]}
+                  activeOpacity={0.7}
+                  onPress={cycleBurn}
+                >
+                  <Text style={styles.burnChipText}>
+                    {burnSecs > 0 ? `🔥${burnLabel(burnSecs)}` : '⏱'}
+                  </Text>
+                </TouchableOpacity>
+                <TextInput
+                  testID="convo-input"
+                  style={styles.threadInput}
+                  value={threadDraft}
+                  onChangeText={(v) => { setThreadDraft(v.slice(0, DM_MAX_LEN)); pingTyping(); }}
+                  placeholder={t('dm.messagePlaceholder')}
+                  placeholderTextColor={Colors.text.muted}
+                  multiline
+                  maxLength={DM_MAX_LEN}
+                />
+                <TouchableOpacity
+                  testID="convo-send"
+                  style={[styles.threadSendBtn, (sending || !threadDraft.trim()) && styles.sendBtnDisabled]}
+                  activeOpacity={0.85}
+                  disabled={sending || !threadDraft.trim()}
+                  onPress={sendInThread}
+                >
+                  {sending ? <ActivityIndicator color="#241605" size="small" /> : <Text style={styles.threadSendText}>➤</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Compose modal */}
+      <Modal testID="dm-compose-modal" visible={composeOpen} transparent animationType="slide" onRequestClose={() => setCompose(false)}>
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t('dm.composeTitle')}</Text>
+            {!!myId && (
+              <View style={styles.yourIdRow}>
+                <Text style={styles.modalYourId}>{t('dm.yourId')}: {myId}</Text>
+                {isVip && <VipBadge compact />}
+              </View>
+            )}
+
+            <Text style={styles.fieldLabel}>{t('dm.recipientLabel')}</Text>
+            <TextInput
+              testID="dm-recipient-input"
+              style={styles.input}
+              value={recipient}
+              onChangeText={setRecipient}
+              placeholder={t('dm.recipientPlaceholder')}
+              placeholderTextColor={Colors.text.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+
+            <TextInput
+              style={[styles.input, styles.inputMultiline]}
+              value={draft}
+              onChangeText={(v) => setDraft(v.slice(0, DM_MAX_LEN))}
+              placeholder={t('dm.messagePlaceholder')}
+              placeholderTextColor={Colors.text.muted}
+              multiline
+              maxLength={DM_MAX_LEN}
+            />
+            <Text style={styles.counter}>{draft.length}/{DM_MAX_LEN}</Text>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} activeOpacity={0.8} onPress={() => setCompose(false)}>
+                <Text style={styles.cancelText}>{t('dm.cancel')}</Text>
+              </TouchableOpacity>
+              <GoldButton style={styles.sendBtn} textStyle={styles.sendText} disabled={sending} onPress={submit} accessibilityLabel={t('dm.send')}>
+                {sending
+                  ? <ActivityIndicator color="#241605" size="small" />
+                  : t('dm.send')}
+              </GoldButton>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <PeerProfileSheet
+        visible={showPeerProfile}
+        peerDeviceId={openConvo?.peerDevice ?? openConvo?.peerUserId ?? ''}
+        onClose={() => setShowPeerProfile(false)}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen:        { flex: 1, backgroundColor: Colors.bg.base },
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Layout.statusBarHeight + Spacing[2], paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing[3] },
+  backBtn:       { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, alignItems: 'center', justifyContent: 'center' },
+  backIcon:      { fontSize: 26, color: Colors.text.secondary, marginTop: -2 },
+  title:         { fontSize: Typography.size.xl, fontFamily: Typography.family.heading, color: Colors.text.primary },
+  newBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  newBtnText:    { fontSize: 22, color: '#241605', marginTop: -2, fontWeight: '700' },
+  searchBtn:     { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginRight: 6 },
+  searchBtnText: { fontSize: 16 },
+  searchBar:     { paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing[2] },
+  searchInput:   { backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, borderRadius: Radius.lg, paddingHorizontal: Spacing[4], paddingVertical: Spacing[2], color: Colors.text.primary, fontSize: Typography.size.sm, fontFamily: Typography.family.body },
+
+  // Recent-contacts quick-access strip.
+  contactStrip:       { flexGrow: 0 },
+  contactStripContent:{ paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing[2], gap: Spacing[3] },
+  contactChip:        { alignItems: 'center', width: 58, gap: 5 },
+  contactRing:         { width: 54, height: 54, borderRadius: 27, borderWidth: 2, borderColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  contactName:         { fontSize: 10, fontFamily: Typography.family.body, color: Colors.text.muted, maxWidth: 58 },
+
+  // Category tabs.
+  categoryTabs:        { flexDirection: 'row', gap: Spacing[2], paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing[2] },
+  categoryTab:         { paddingHorizontal: Spacing[4], paddingVertical: 7, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border.default, backgroundColor: Colors.bg.surface },
+  categoryTabActive:   { backgroundColor: 'rgba(255,182,39,0.12)', borderColor: Colors.border.goldGlow },
+  categoryTabText:     { fontSize: 12, fontFamily: Typography.family.label, color: Colors.text.muted },
+  categoryTabTextActive:{ color: Colors.gold[400], fontWeight: '700' },
+
+  scroll:        { flex: 1 },
+  content:       { paddingHorizontal: Layout.screenPadding, gap: Spacing[3], paddingTop: Spacing[1] },
+  emptyCard:     { alignItems: 'center', gap: Spacing[3], paddingVertical: Spacing[8] },
+  emptyIcon:     { fontSize: 40 },
+  emptyText:     { fontSize: Typography.size.sm, fontFamily: Typography.family.body, color: Colors.text.muted, textAlign: 'center', paddingHorizontal: Spacing[4] },
+
+  // Conversation row (avatar + text)
+  item:          { flexDirection: 'row', alignItems: 'center', gap: Spacing[3], borderRadius: Radius.lg, padding: Spacing[3], backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.subtle },
+  itemUnread:    { borderColor: 'rgba(255,182,39,0.25)', backgroundColor: 'rgba(255,182,39,0.05)' },
+  itemMain:      { flex: 1, gap: 4 },
+  itemHeader:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemTitle:     { flex: 1, fontSize: Typography.size.base, fontFamily: Typography.family.heading, color: Colors.text.secondary },
+  itemTitleUnread: { color: Colors.text.primary },
+  itemDate:      { fontSize: Typography.size.xs, fontFamily: Typography.family.mono, color: Colors.text.muted },
+  itemBody:      { flex: 1, fontSize: Typography.size.sm, fontFamily: Typography.family.body, color: Colors.text.secondary, lineHeight: 20 },
+
+  avatar:        { backgroundColor: Colors.bg.base, borderWidth: 1, borderColor: Colors.border.default, alignItems: 'center', justifyContent: 'center' },
+  avatarOfficial:{ backgroundColor: 'rgba(255,182,39,0.10)', borderColor: 'rgba(255,182,39,0.4)' },
+  avatarNode:    { backgroundColor: 'rgba(51,211,255,0.16)', borderColor: 'rgba(123,92,250,0.35)' },
+  avatarText:    { fontSize: Typography.size.lg, fontFamily: Typography.family.heading, color: Colors.gold[400] },
+  // Cyan, not gold — the fuller Chats reference (Khabat's later upload)
+  // specifically colors the verified checkmark cyan, distinct from the
+  // official avatar's own gold accent.
+  verifiedBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.cyan[400], alignItems: 'center', justifyContent: 'center' },
+  verifiedText:  { fontSize: 10, color: '#001824', fontWeight: '700' },
+
+  threadPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
+  unreadBadge:   { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, backgroundColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  unreadBadgeText: { fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: '#241605', fontWeight: '700' },
+
+  // Chat thread modal
+  threadRoot:    { flex: 1, backgroundColor: Colors.bg.base },
+  threadCard:    { flex: 1 },
+  threadHeader:  { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], paddingTop: Layout.statusBarHeight + Spacing[2], paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing[3], borderBottomWidth: 1, borderBottomColor: Colors.border.subtle },
+  threadPeerWrap:{ flex: 1 },
+  threadPeerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  threadPeer:    { flexShrink: 1, fontSize: Typography.size.lg, fontFamily: Typography.family.heading, color: Colors.text.primary },
+  threadSubtitle:{ fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: Colors.gold[400] },
+  threadDeleteBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, alignItems: 'center', justifyContent: 'center' },
+  threadDeleteIcon: { fontSize: 16 },
+
+  // Thread header overflow menu (Block/Delete) — same card/row visual
+  // language as TopBar's avatar menu, so the app's one dropdown pattern
+  // reads as one system rather than two different-looking popups.
+  threadMenu: {
+    position: 'absolute', width: 180,
+    backgroundColor: Colors.bg.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.border.default, overflow: 'hidden',
+  },
+  threadMenuRow:        { flexDirection: 'row', alignItems: 'center', gap: Spacing[3], paddingVertical: Spacing[3], paddingHorizontal: Spacing[4], borderBottomWidth: 1, borderBottomColor: Colors.border.default },
+  threadMenuRowLast:    { borderBottomWidth: 0 },
+  threadMenuIcon:       { fontSize: 15, width: 20, textAlign: 'center' },
+  threadMenuLabel:      { fontSize: 14, fontFamily: Typography.family.body, color: Colors.text.primary },
+  threadMenuDestructive:{ color: '#FF6B6B' },
+  threadAdBanner: { marginHorizontal: Layout.screenPadding, marginTop: Spacing[2] },
+  threadScroll:  { flex: 1 },
+  threadScrollContent: { padding: Layout.screenPadding, gap: Spacing[2] },
+  bubbleRow:     { flexDirection: 'row' },
+  bubbleRowOut:  { justifyContent: 'flex-end' },
+  bubbleRowIn:   { justifyContent: 'flex-start' },
+  bubble:        { maxWidth: '82%', borderRadius: Radius.lg, paddingHorizontal: Spacing[3], paddingVertical: Spacing[2] },
+  bubbleIn:      { backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.subtle, borderTopLeftRadius: 4 },
+  bubbleOut:     { backgroundColor: Colors.gold[400], borderTopRightRadius: 4 },
+  bubbleTitle:   { fontSize: Typography.size.sm, fontFamily: Typography.family.heading, color: Colors.gold[400], marginBottom: 3 },
+  bubbleText:    { fontSize: Typography.size.sm, fontFamily: Typography.family.body, color: Colors.text.primary, lineHeight: 20 },
+  bubbleTextOut: { color: '#241605' },
+  bubbleLinkBtn: { marginTop: 6, alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.12)', borderRadius: Radius.sm, paddingHorizontal: Spacing[2], paddingVertical: 4 },
+  bubbleLinkText: { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.gold[400] },
+  bubbleTime:    { fontSize: 9, fontFamily: Typography.family.mono, color: Colors.text.muted, alignSelf: 'flex-end', marginTop: 2 },
+  bubbleTimeOut: { color: 'rgba(2,27,16,0.6)' },
+
+  reactionBadgeRow: { flexDirection: 'row', gap: 4, marginTop: -6, marginBottom: 6, paddingHorizontal: 4 },
+  reactionBadge:    { flexDirection: 'row', backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.subtle, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 },
+  reactionBadgeMine:{ borderColor: Colors.gold[400] },
+  reactionBadgeText:{ fontSize: 11, color: Colors.text.secondary },
+
+  // No alignSelf here (bug fix 2026-07-22, chat audit #3): it used to be
+  // hardcoded 'flex-start', which pins the picker to the left edge even for
+  // your own (right-aligned) sent messages -- justifyContent from
+  // bubbleRowOut/In has no effect on a shrink-to-fit row's own position, only
+  // on its children. reactionPickerOut/In below (mirroring bubbleRowOut/In's
+  // naming) set the real per-direction alignSelf instead.
+  reactionPickerRow: { flexDirection: 'row', gap: 6, marginTop: -4, marginBottom: 8, paddingHorizontal: 4, backgroundColor: Colors.bg.surface, borderRadius: 20, borderWidth: 1, borderColor: Colors.border.default, paddingVertical: 4 },
+  reactionPickerOut: { alignSelf: 'flex-end' },
+  reactionPickerIn:  { alignSelf: 'flex-start' },
+  reactionPickerBtn: { paddingHorizontal: 4 },
+  reactionPickerEmoji: { fontSize: 20 },
+  bubbleBurn:    { borderWidth: 1, borderColor: 'rgba(255,140,60,0.5)' },
+  burnNote:      { fontSize: 10, fontFamily: Typography.family.mono, color: '#FF8C3C', marginTop: 3 },
+  burnChip:      { height: 46, minWidth: 46, paddingHorizontal: 6, borderRadius: 23, borderWidth: 1, borderColor: Colors.border.default, backgroundColor: Colors.bg.surface, alignItems: 'center', justifyContent: 'center' },
+  burnChipOn:    { borderColor: '#FF8C3C', backgroundColor: 'rgba(255,140,60,0.12)' },
+  burnChipText:  { fontSize: 13, color: '#FF8C3C', fontFamily: Typography.family.mono },
+  threadInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing[2], paddingHorizontal: Layout.screenPadding, paddingVertical: Spacing[3], paddingBottom: Spacing[6], borderTopWidth: 1, borderTopColor: Colors.border.subtle },
+  threadInput:   { flex: 1, maxHeight: 110, borderRadius: Radius.lg, backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, paddingHorizontal: Spacing[3], paddingVertical: Platform.OS === 'ios' ? 12 : 8, color: Colors.text.primary, fontFamily: Typography.family.body, fontSize: Typography.size.base },
+  threadSendBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  threadSendText:{ fontSize: 20, color: '#241605', fontWeight: '700' },
+  introNote:     { backgroundColor: 'rgba(255,182,39,0.06)', borderWidth: 1, borderColor: 'rgba(255,182,39,0.2)', borderRadius: Radius.lg, padding: Spacing[3], marginBottom: Spacing[2] },
+  introText:     { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.text.secondary, textAlign: 'center', lineHeight: 18 },
+  loadOlderBtn:  { alignSelf: 'center', paddingHorizontal: Spacing[3], paddingVertical: Spacing[2], borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border.default, backgroundColor: Colors.bg.surface, marginBottom: Spacing[2] },
+  loadOlderText: { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.text.secondary },
+  moreResultsLabel: { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.text.muted, marginTop: Spacing[3], marginBottom: Spacing[1], paddingHorizontal: Spacing[1], textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  modalRoot:     { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  modalCard:     { backgroundColor: Colors.bg.base, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border.default, padding: Layout.screenPadding, paddingBottom: Spacing[8], gap: Spacing[2] },
+  modalTitle:    { fontSize: Typography.size.lg, fontFamily: Typography.family.heading, color: Colors.text.primary, marginBottom: 2 },
+  yourIdRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing[2] },
+  modalYourId:   { fontSize: Typography.size.xs, fontFamily: Typography.family.mono, color: Colors.text.muted },
+  fieldLabel:    { fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: Colors.text.muted, marginTop: Spacing[2] },
+  input:         { borderRadius: Radius.lg, backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, paddingHorizontal: Spacing[3], paddingVertical: Platform.OS === 'ios' ? 12 : 8, color: Colors.text.primary, fontFamily: Typography.family.body, fontSize: Typography.size.base },
+  inputMultiline: { minHeight: 110, textAlignVertical: 'top', marginTop: Spacing[2] },
+  counter:       { alignSelf: 'flex-end', fontSize: Typography.size.xs, fontFamily: Typography.family.mono, color: Colors.text.muted },
+  modalActions:  { flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[3] },
+  cancelBtn:     { flex: 1, paddingVertical: 14, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border.default, backgroundColor: Colors.bg.surface, alignItems: 'center' },
+  cancelText:    { fontSize: Typography.size.base, fontFamily: Typography.family.label, color: Colors.text.secondary },
+  sendBtn:       { flex: 1, paddingVertical: 14, borderRadius: Radius.full },
+  sendBtnDisabled: { opacity: 0.6 },
+  sendText:      { fontSize: Typography.size.base, fontFamily: Typography.family.label, fontWeight: '700' },
+});

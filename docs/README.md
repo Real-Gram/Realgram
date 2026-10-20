@@ -1,9 +1,8 @@
-# Reference docs
+# Realgram documentation
 
-Public-facing product reference for RealGram.
+This repository contains the public website, app source, backend source and
+build workflows. The current engineering handoff is
+[realgram/MIGRATION_STATUS.md](realgram/MIGRATION_STATUS.md).
 
-- **[PRODUCT_VISION.md](PRODUCT_VISION.md)** — what RealGram is, the four parts it unifies, and the promise it makes.
-
-See **[../design/](../design/README.md)** for the visual identity system — palette, type, and the brand brief.
-
-Implementation-level material (API contracts, integration map, monetization/anti-abuse rules, compliance reasoning, build budgets) lives in the private `realgram-docs` companion repo, not here — that content names internal system topology and isn't meant to be world-readable, even where none of it is a literal secret.
+Runtime credentials, private message keys, database contents and signing files
+are deployment configuration and must never be committed.

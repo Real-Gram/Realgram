@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Standalone Win32 service project — deliberately NOT added to setalink.sln.
-  setalink.vcxproj is a UWP/"Windows Store" application type (see its
+  Standalone Win32 service project — deliberately NOT added to realgram.sln.
+  realgram.vcxproj is a UWP/"Windows Store" application type (see its
   AppContainerApplication/ApplicationType properties) via react-native-
   windows; this is a plain classic Win32 console/service target with no RNW
   dependency at all, so it's simpler and safer to build it with its own

@@ -4,7 +4,7 @@ import re
 root=Path('/var/www/realgram'); p=root/'seo-status.html'; old=p.read_text()
 backup=root/'.git/seo-backups-20261020/seo-status.html'
 if not backup.exists():backup.write_text(old)
-queries=[('realgram',121,5,2.17),('real gram',17,0,6.59),('setalink',8,0,8.5),('gram vpn',4,0,7.0),('livegram vpn',2,0,9.5),('vpn gram',1,0,10.0),('وایرگارد یعنی چی',1,0,19.0)]
+queries=[('realgram',121,5,2.17),('real gram',17,0,6.59),('realgram',8,0,8.5),('gram vpn',4,0,7.0),('livegram vpn',2,0,9.5),('vpn gram',1,0,10.0),('وایرگارد یعنی چی',1,0,19.0)]
 qrows=''.join('<tr><td class="kw"><bdi>'+e(q)+'</bdi></td><td>'+str(i)+'</td><td>'+str(c)+'</td><td>#'+str(pos).replace('.',',')+'</td></tr>' for q,i,c,pos in queries)
 body=f'''<div class="wrap">
 <header class="hero"><span class="eyebrow">Internt — ikke indeksert</span><h1>SEO-status for realgram.no</h1>

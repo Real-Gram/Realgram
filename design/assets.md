@@ -15,7 +15,7 @@ What's in `../brand/` today, and what's genuinely missing.
 | `realtoken.png` | REAL token art |
 | `covers/` | Blog post cover images (11 files) — content assets, not identity assets; listed here only so they're not mistaken for brand marks when this folder is browsed |
 
-No mark or wordmark exists yet for **Realink/Freedom** or **TrustAI** — the
+No mark or wordmark exists yet for **Realgram/Freedom** or **TrustAI** — the
 other two of the four parts RealGram unifies (see
 [brand-principles.md](brand-principles.md)). Right now only two of the four
 have any visual identity at all.

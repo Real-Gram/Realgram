@@ -19,7 +19,7 @@ const SITE_ROOT = '/var/www/realgram';
 const SITE_URL = 'https://realgram.no';
 const API_BASE = 'https://shahnameh.setaei.com/api/blog';
 const STATS_API = 'https://shahnameh.setaei.com/api/public/stats';
-const VERSION_API = 'https://setalink.no/download/version.json';
+const VERSION_API = 'https://realgram.no/download/version.json';
 
 function get(url) {
   return new Promise((resolve, reject) => {
