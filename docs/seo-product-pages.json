@@ -1,0 +1,263 @@
+[
+  {
+    "slug": "freedom",
+    "en": {
+      "title": "RealGram Freedom VPN for Android | Download & connection guide",
+      "h1": "Freedom VPN inside RealGram for Android",
+      "description": "Download RealGram for Android and learn how its Freedom connection layer works, including VLESS, Reality, network limits and troubleshooting.",
+      "intro": "Freedom is the connection layer in RealGram. It brings VPN controls into the same Android app as messaging, Shahnameh and your REAL-ID, so you can start from one account.",
+      "sections": [
+        [
+          "What Freedom does",
+          "The Android client includes support for VLESS and Reality transports. These describe how a connection reaches a server; they are not a guarantee that every network will allow it. A working connection also depends on server availability, your internet provider and the configuration supplied to the app."
+        ],
+        [
+          "Using RealGram on restricted networks",
+          "People looking for a VPN for Iran need clear expectations. Filtering changes across mobile operators and Wi-Fi providers. If one connection fails, first confirm that ordinary internet access works, then retry with the available connection options. A successful connection today does not establish that the same route will work tomorrow."
+        ],
+        [
+          "Download and connect",
+          "Use the Android download link on the RealGram homepage. Android may ask you to allow installation from the browser used for the download. Review the prompt, install the APK and open RealGram. When Android asks to create a VPN connection, confirm only if you intend to use Freedom. Check the connection state inside the app before relying on it."
+        ],
+        [
+          "If the connection fails",
+          "Record the app version, time, network type and any error shown. Try a second network to distinguish an operator-specific problem from an app or server problem. Do not publish account tokens, passwords or connection keys when asking for help. Updating the APK is useful when a release includes a relevant fix, but is not a promise of connectivity."
+        ],
+        [
+          "Understand the limits",
+          "A VPN routes traffic through another server. It does not by itself make an account anonymous, protect against every scam or prevent a destination service from identifying a signed-in user. RealGram does not claim that installing this APK provides a satellite internet connection."
+        ]
+      ],
+      "faq": [
+        [
+          "Is Freedom a separate Android app?",
+          "No. Freedom is a connection feature inside RealGram."
+        ],
+        [
+          "Does it work on every Iranian network?",
+          "Availability depends on the network, filtering and server configuration. Universal connectivity is not guaranteed."
+        ],
+        [
+          "Where is the APK?",
+          "The current Android APK is linked in the download section on the RealGram homepage."
+        ]
+      ]
+    },
+    "fa": {
+      "title": "فیلترشکن اندروید رئال‌گرام | دانلود و راهنمای Freedom",
+      "h1": "Freedom؛ اتصال وی‌پی‌ان در رئال‌گرام اندروید",
+      "description": "دانلود رئال‌گرام اندروید و آشنایی با اتصال Freedom، پروتکل‌های VLESS و Reality، محدودیت شبکه و راهنمای رفع مشکل اتصال.",
+      "intro": "Freedom بخش اتصال در رئال‌گرام است. ابزار اتصال در همان اپلیکیشنی قرار دارد که پیام‌رسان، بازی شاهنامه و شناسه REAL-ID را در اختیار شما می‌گذارد.",
+      "sections": [
+        [
+          "Freedom چگونه کار می‌کند؟",
+          "نسخه اندروید از روش‌های اتصال VLESS و Reality پشتیبانی می‌کند. این نام‌ها روش ارتباط با سرور را توضیح می‌دهند، اما تضمین نمی‌کنند که اتصال روی تمام شبکه‌ها برقرار شود. در دسترس بودن سرور، تنظیمات اپلیکیشن و محدودیت اپراتور بر نتیجه اثر می‌گذارد."
+        ],
+        [
+          "فیلترشکن برای ایران؛ انتظار واقع‌بینانه",
+          "محدودیت اینترنت ممکن است بین اپراتورها، اینترنت همراه و وای‌فای متفاوت باشد. اگر اتصال برقرار نشد، ابتدا دسترسی عادی اینترنت را بررسی کنید و سپس گزینه‌های موجود در برنامه را امتحان کنید. کار کردن یک مسیر در یک روز به معنی تضمین اتصال در روز بعد نیست."
+        ],
+        [
+          "دانلود و نصب روی اندروید",
+          "از بخش دانلود در صفحه اصلی رئال‌گرام، فایل APK اندروید را بگیرید. ممکن است اندروید برای نصب از مرورگر اجازه بخواهد؛ پیام را بررسی کنید و سپس نصب را انجام دهید. برنامه را باز کنید. اگر قصد استفاده از Freedom را دارید، درخواست ایجاد اتصال VPN را تأیید کنید و وضعیت اتصال را در برنامه ببینید."
+        ],
+        [
+          "اگر وصل نشد چه کنیم؟",
+          "نسخه برنامه، زمان خطا، نوع شبکه و متن پیام خطا را یادداشت کنید. آزمایش با شبکه دوم کمک می‌کند مشکل اپراتور را از مشکل برنامه یا سرور تشخیص دهید. هنگام درخواست کمک، رمز عبور، توکن حساب و کلید اتصال را منتشر نکنید. به‌روزرسانی می‌تواند یک ایراد مشخص را برطرف کند، اما تضمین اتصال نیست."
+        ],
+        [
+          "محدودیت‌های امنیت و حریم خصوصی",
+          "وی‌پی‌ان ترافیک را از مسیر یک سرور دیگر عبور می‌دهد. این کار به‌تنهایی حساب شما را ناشناس نمی‌کند و در برابر تمام کلاهبرداری‌ها محافظت نمی‌کند. ورود به یک سرویس با حساب شخصی همچنان می‌تواند هویت شما را برای همان سرویس مشخص کند. نصب این APK به معنی دریافت اینترنت ماهواره‌ای نیست."
+        ]
+      ],
+      "faq": [
+        [
+          "آیا Freedom اپلیکیشن جداگانه است؟",
+          "خیر؛ Freedom بخشی از اپلیکیشن رئال‌گرام است."
+        ],
+        [
+          "روی همه اپراتورهای ایران کار می‌کند؟",
+          "نتیجه به شبکه، محدودیت‌ها و تنظیمات سرور بستگی دارد؛ اتصال همیشگی تضمین نمی‌شود."
+        ],
+        [
+          "فایل APK را از کجا دانلود کنم؟",
+          "لینک نسخه اندروید در بخش دانلود صفحه اصلی رئال‌گرام قرار دارد."
+        ]
+      ]
+    }
+  },
+  {
+    "slug": "shahnameh",
+    "en": {
+      "title": "Shahnameh game in RealGram | Persian stories & quizzes",
+      "h1": "Explore the Shahnameh through stories and quizzes",
+      "description": "Discover the Shahnameh game in RealGram: Persian epic stories, chapters, quizzes and progress connected to your REAL-ID.",
+      "intro": "The Shahnameh is Ferdowsi’s Persian epic, often called the Book of Kings. RealGram brings a game based on this literary world into the same app as your account and messages.",
+      "sections": [
+        [
+          "Learn through a sequence of chapters",
+          "Shahnameh in RealGram combines story chapters and quizzes. This offers a way to return to the characters and events in short sessions. It is an introduction to a literary tradition; reading a game summary is not a substitute for studying the full text or comparing scholarly translations."
+        ],
+        [
+          "For Persian readers and curious newcomers",
+          "A Persian story game can support conversations about language, mythology and cultural memory. Read a chapter, try its questions and return to details that were unfamiliar. If you are learning Persian, keep a separate list of words and character names to review outside the game."
+        ],
+        [
+          "Start with the Android app",
+          "Download RealGram from the homepage and open the Shahnameh section. Use the same REAL-ID when returning so that supported account progress stays associated with your identity. The app’s interface shows the chapters and activities currently available; availability can change with releases."
+        ],
+        [
+          "Progress and REAL",
+          "Some game activities connect to the REAL balance in the RealGram ecosystem. Treat in-game balances and any market-traded token as different concepts: completing a quiz is not a promise of income, a cash payout or a future token price. The app’s current rules determine how a particular activity is recorded."
+        ],
+        [
+          "Read more about the project",
+          "The RealGram blog explains the game’s learning approach and how REAL-ID connects the different parts of the app. Use those guides if you want context before installing or if you need to understand why one account is shared across the ecosystem."
+        ]
+      ],
+      "faq": [
+        [
+          "What is the Shahnameh?",
+          "It is Ferdowsi’s Persian epic, known in English as the Book of Kings."
+        ],
+        [
+          "Where do I find the game?",
+          "Open the Shahnameh section in RealGram. The homepage also describes the browser option."
+        ],
+        [
+          "Does playing guarantee earnings?",
+          "No. Game progress is not a guarantee of income or token value."
+        ]
+      ]
+    },
+    "fa": {
+      "title": "بازی شاهنامه در رئال‌گرام | داستان، فصل و آزمون",
+      "h1": "بازی شاهنامه؛ آشنایی با داستان‌ها و آزمون‌های شاهنامه",
+      "description": "با بازی شاهنامه در رئال‌گرام آشنا شوید؛ داستان‌های حماسی فردوسی، فصل‌ها، آزمون‌ها و پیشرفت متصل به REAL-ID.",
+      "intro": "شاهنامه اثر حماسی فردوسی و بخشی مهم از میراث ادبی فارسی است. در رئال‌گرام می‌توانید در کنار حساب کاربری و پیام‌رسان، به بازی الهام‌گرفته از این جهان ادبی دسترسی داشته باشید.",
+      "sections": [
+        [
+          "یادگیری در قالب فصل و پرسش",
+          "بخش شاهنامه داستان و آزمون را در کنار هم قرار می‌دهد تا بتوانید در زمان‌های کوتاه با شخصیت‌ها و رویدادها آشنا شوید. خلاصه داستان در یک بازی جای خواندن متن کامل یا مطالعه پژوهش‌های ادبی را نمی‌گیرد؛ می‌تواند نقطه شروعی برای علاقه‌مند شدن و مطالعه بیشتر باشد."
+        ],
+        [
+          "برای فارسی‌زبان‌ها و علاقه‌مندان تازه‌کار",
+          "بازی داستانی فارسی فرصتی برای گفت‌وگو درباره زبان، اسطوره و حافظه فرهنگی فراهم می‌کند. یک فصل را بخوانید، پرسش‌ها را پاسخ دهید و به بخش‌هایی که برایتان تازه بود برگردید. اگر در حال یادگیری فارسی هستید، نام شخصیت‌ها و واژه‌های تازه را جداگانه یادداشت کنید."
+        ],
+        [
+          "شروع از اپلیکیشن اندروید",
+          "رئال‌گرام را از صفحه اصلی دانلود کنید و بخش شاهنامه را باز کنید. هنگام بازگشت از همان REAL-ID استفاده کنید تا پیشرفت قابل ثبت به همان حساب مرتبط بماند. فصل‌ها و فعالیت‌های در دسترس را در رابط فعلی برنامه ببینید؛ این بخش‌ها ممکن است با انتشار نسخه‌های جدید تغییر کنند."
+        ],
+        [
+          "پیشرفت بازی و موجودی REAL",
+          "برخی فعالیت‌ها به موجودی REAL در اکوسیستم رئال‌گرام مربوط می‌شوند. امتیاز یا موجودی داخل بازی را با ارزش یک توکن قابل معامله یکسان ندانید. پاسخ دادن به آزمون تضمین درآمد، دریافت پول نقد یا قیمت آینده توکن نیست؛ ثبت هر فعالیت تابع قواعد فعلی همان بخش است."
+        ],
+        [
+          "مطالعه بیشتر درباره پروژه",
+          "در وبلاگ رئال‌گرام می‌توانید درباره یادگیری با بازی و نقش REAL-ID بخوانید. این راهنماها کمک می‌کنند پیش از نصب، ساختار پروژه را بشناسید و بدانید چرا بخش‌های مختلف برنامه از یک حساب مشترک استفاده می‌کنند."
+        ]
+      ],
+      "faq": [
+        [
+          "شاهنامه چیست؟",
+          "شاهنامه اثر حماسی فردوسی است که در انگلیسی با نام Book of Kings هم شناخته می‌شود."
+        ],
+        [
+          "بازی را از کجا باز کنم؟",
+          "بخش شاهنامه را در رئال‌گرام باز کنید. صفحه اصلی گزینه مرورگر را هم معرفی می‌کند."
+        ],
+        [
+          "آیا بازی درآمد تضمینی دارد؟",
+          "خیر؛ پیشرفت در بازی تضمین درآمد یا ارزش مالی توکن نیست."
+        ]
+      ]
+    }
+  },
+  {
+    "slug": "hakim-ai",
+    "en": {
+      "title": "Hakim AI in RealGram | In-app help and Persian guidance",
+      "h1": "Meet Hakim AI, the guide inside RealGram",
+      "description": "Learn how to use Hakim AI for questions about RealGram, account progress and the app’s features, with clear limits on AI answers.",
+      "intro": "Hakim AI is the assistant feature in the RealGram ecosystem. It gives you a place to ask questions while exploring the app, rather than switching between unrelated product guides.",
+      "sections": [
+        [
+          "Ask about what you are trying to do",
+          "Start with the task: finding Shahnameh, understanding a screen or asking what an account-related message means. Include the app version and a short description of the screen if a question concerns a problem. The more concrete the question, the easier it is to check whether the answer actually helps."
+        ],
+        [
+          "Using Persian in your questions",
+          "RealGram includes a Persian interface with right-to-left reading support. You can write a question in Persian when using the assistant, while recognizing that the quality and availability of a reply depend on the service behind it. Check technical terms, numbers and names against the relevant screen or published guide."
+        ],
+        [
+          "Check AI answers before acting",
+          "An AI response can be incomplete, outdated or wrong. For connection problems, compare advice with the current app settings. For progress or rewards, rely on the account records shown by the service. A conversational answer is not independent evidence that a transaction was completed."
+        ],
+        [
+          "Keep private information out of the prompt",
+          "Do not paste account passwords, recovery codes, payment details or VPN connection secrets into a conversation. Describe an error without including credentials. If you share a screenshot for support, cover any sensitive account information before sending it."
+        ],
+        [
+          "Install and find the feature",
+          "Download the Android APK through the RealGram homepage, open the app and find Hakim AI in the available features. This page explains the feature’s purpose; it does not promise offline operation, an always-available model or professional advice."
+        ]
+      ],
+      "faq": [
+        [
+          "Is Hakim AI part of RealGram?",
+          "Yes. It is one of the features presented in the RealGram ecosystem."
+        ],
+        [
+          "Can an AI answer confirm a payment or reward?",
+          "No. Check the actual account and transaction records."
+        ],
+        [
+          "Should I share my password to get help?",
+          "No. Never include passwords, recovery codes or connection secrets in a prompt."
+        ]
+      ]
+    },
+    "fa": {
+      "title": "حکیم؛ دستیار هوش مصنوعی رئال‌گرام | راهنمای استفاده",
+      "h1": "حکیم؛ دستیار هوش مصنوعی در رئال‌گرام",
+      "description": "آشنایی با حکیم در رئال‌گرام؛ راهنمای پرسش درباره امکانات برنامه، پیشرفت حساب، استفاده فارسی و محدودیت پاسخ‌های هوش مصنوعی.",
+      "intro": "حکیم بخش دستیار هوش مصنوعی در اکوسیستم رئال‌گرام است. هنگام آشنایی با امکانات برنامه، می‌توانید پرسش خود را در همین محیط مطرح کنید.",
+      "sections": [
+        [
+          "پرسش را با کاری که می‌خواهید انجام دهید شروع کنید",
+          "برای پیدا کردن شاهنامه، شناخت یک صفحه یا فهم پیام مربوط به حساب، دقیق بگویید چه می‌خواهید انجام دهید. اگر موضوع یک خطاست، نسخه برنامه و شرح کوتاهی از صفحه را بنویسید. پرسش مشخص کمک می‌کند پاسخ را با نتیجه واقعی مقایسه کنید."
+        ],
+        [
+          "پرسش به زبان فارسی",
+          "رئال‌گرام رابط فارسی با چیدمان راست‌به‌چپ دارد. می‌توانید پرسش خود را به فارسی بنویسید، اما کیفیت و در دسترس بودن پاسخ به سرویس پشتیبان بستگی دارد. اصطلاح‌های فنی، عددها و نام‌ها را با صفحه مربوط در برنامه یا راهنمای منتشرشده تطبیق دهید."
+        ],
+        [
+          "پاسخ هوش مصنوعی را بررسی کنید",
+          "پاسخ ممکن است ناقص، قدیمی یا اشتباه باشد. درباره اتصال، پیشنهاد را با تنظیمات فعلی برنامه بررسی کنید. درباره پیشرفت یا پاداش، به سوابق واقعی حساب تکیه کنید. یک پاسخ در گفت‌وگو مدرک مستقل برای انجام شدن تراکنش نیست."
+        ],
+        [
+          "اطلاعات محرمانه را وارد نکنید",
+          "رمز عبور، کد بازیابی، اطلاعات پرداخت و کلید اتصال وی‌پی‌ان را در متن پرسش قرار ندهید. خطا را بدون فرستادن اطلاعات ورود توضیح دهید. اگر برای پشتیبانی تصویر می‌فرستید، ابتدا داده‌های حساس حساب را بپوشانید."
+        ],
+        [
+          "نصب برنامه و پیدا کردن حکیم",
+          "فایل APK اندروید را از صفحه اصلی رئال‌گرام دانلود کنید و پس از باز کردن برنامه، بخش حکیم را در امکانات موجود پیدا کنید. این صفحه کاربرد دستیار را توضیح می‌دهد و وعده اجرای آفلاین، دسترسی همیشگی به مدل یا ارائه مشاوره تخصصی نمی‌دهد."
+        ]
+      ],
+      "faq": [
+        [
+          "حکیم بخشی از رئال‌گرام است؟",
+          "بله؛ حکیم یکی از امکانات معرفی‌شده در اکوسیستم رئال‌گرام است."
+        ],
+        [
+          "آیا پاسخ دستیار انجام پرداخت یا ثبت پاداش را ثابت می‌کند؟",
+          "خیر؛ موجودی و سوابق واقعی حساب را بررسی کنید."
+        ],
+        [
+          "برای گرفتن راهنمایی رمز عبور را بفرستم؟",
+          "خیر؛ رمز، کد بازیابی و کلید اتصال را در پرسش وارد نکنید."
+        ]
+      ]
+    }
+  }
+]
