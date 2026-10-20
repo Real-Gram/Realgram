@@ -142,7 +142,7 @@ describe('buildGameUrl', () => {
 // (2026-07-19: the panel's REAL-ID auto-fallback means the on-mount probe
 // should succeed for virtually every RealGram user with zero user action.)
 describe('GameScreen without a cached REAL-ID, server-side probe succeeds', () => {
-  
+
 
   beforeEach(() => { mockRealId = ''; mockSetRealId.mockClear(); mockGetSsoToken.mockClear(); });
 
@@ -175,7 +175,7 @@ describe('GameScreen without a cached REAL-ID, server-side probe succeeds', () =
 
 // ── GameScreen without a cached REAL-ID, server-side probe fails ─────────────
 describe('GameScreen without a cached REAL-ID, server-side probe fails (req #6)', () => {
-  
+
 
   beforeEach(() => {
     mockRealId = '';

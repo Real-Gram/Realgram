@@ -58,6 +58,8 @@ dependencies verified before any live cutover; no active installation is deleted
 The migrated mobile source passed all 46 Jest suites / 433 tests, plus the account-state migration test. Relay tests
 cover voucher validation, presence and FCM sender behavior. PHP delivery tests
 use an isolated temporary folder and in-memory SQLite, not production data.
-Android native compilation and device validation are separate checks.
+The first Android CI run exposed an obsolete SDK tools package in the imported
+workflow; the workflow now explicitly installs platform-tools and Android 34.
+Android native compilation and device validation remain separate checks.
 The live website download links and version metadata now use realgram.no only,
 pointing to the verified 0.9.149 download. Other live SEO edits were preserved.
