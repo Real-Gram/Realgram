@@ -138,19 +138,33 @@ jobs:
             exit 1
           fi
 
-      - name: Decode release keystore
-        working-directory: mobile-app/android/app
-        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
-
-      - name: Write keystore.properties
-        working-directory: mobile-app/android
+      - name: Prepare release signing without shell interpolation
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          {
-            echo "storeFile=release.keystore"
-            echo "storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}"
-            echo "keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}"
-            echo "keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}"
-          } > keystore.properties
+          python3 - <<'PYSIGN'
+          import base64, os, pathlib
+          root = pathlib.Path('mobile-app/android')
+          key = root / 'app/release.keystore'
+          key.write_bytes(base64.b64decode(os.environ['RELEASE_KEYSTORE_BASE64'], validate=True))
+          key.chmod(0o600)
+          def prop(value):
+              return value.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace(' ', '\\ ')
+          values = {
+              'storeFile': 'release.keystore',
+              'storePassword': os.environ['RELEASE_STORE_PASSWORD'],
+              'keyAlias': os.environ['RELEASE_KEY_ALIAS'],
+              'keyPassword': os.environ['RELEASE_KEY_PASSWORD'],
+          }
+          if not all(values.values()):
+              raise SystemExit('Missing release signing configuration')
+          config = root / 'keystore.properties'
+          config.write_text(''.join(k + '=' + prop(v) + '\n' for k, v in values.items()))
+          config.chmod(0o600)
+          PYSIGN
 
       # ── Build ────────────────────────────────────────────────────────────────
       - name: Build release APKs
