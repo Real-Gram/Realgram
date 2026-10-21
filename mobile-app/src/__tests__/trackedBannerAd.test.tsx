@@ -217,3 +217,18 @@ describe('banner visibility and pending retry lifetime', () => {
     act(() => tree.unmount());
   });
 });
+
+
+describe('SDK refresh retry after a prior successful banner load', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+  it('retries the mounted banner after a refresh fails', async () => {
+    const tree = await mount({ slot: 'home_banner' });
+    const banner = tree.root.findByProps({ testID: 'banner-ad' });
+    const load = banner.parent!.instance.load as jest.Mock;
+    act(() => banner.props.onAdLoaded());
+    act(() => banner.props.onAdFailedToLoad(new Error('refresh network error')));
+    act(() => jest.advanceTimersByTime(5000));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+});

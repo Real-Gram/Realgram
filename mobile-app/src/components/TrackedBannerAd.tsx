@@ -17,8 +17,7 @@
  *    banner" cycle) on the shared 5s/15s/30s backoff, then gives up and tells
  *    the parent so it can fall back to the promo. A LOADED banner is never
  *    reloaded — it just sits there until the component itself unmounts.
- *  - A per-slot module-level lock stops two instances of the same slot from
- *    ever having overlapping in-flight loads.
+ *  - Retry timers belong to their mounted banner instance and stop on unmount.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -50,10 +49,6 @@ type Props = {
   onAdFailedToLoad?: (error: Error) => void;
 };
 
-// One load in flight per slot, ever — guards against two mounted instances of
-// the same slot (shouldn't normally happen, but is cheap to make impossible).
-const _slotLoading: Partial<Record<BannerSlot, boolean>> = {};
-
 export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
   const [ready, setReady] = useState(isAdsInitialized());
   // Khabat, 2026-07-29: real device session showed the banner's automatic
@@ -63,6 +58,7 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
   // settle, same fix as adsService.ts's interstitial/rewarded loaders.
   const [interactionsDone, setInteractionsDone] = useState(false);
   const adRef = useRef<BannerAdInstance>(null);
+  const mountedRef = useRef(true);
   const retryIdxRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -82,11 +78,13 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
     return () => handle.cancel();
   }, []);
 
-  useEffect(() => () => {
-    // Unmount: release this slot's lock and cancel any pending retry so a
-    // stale timer from a torn-down instance can't fire `.load()` on nothing.
-    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-    _slotLoading[slot] = false;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    };
   }, [slot]);
 
   // AdMob's SDK has no "request started" callback of its own — the BannerAd
@@ -96,7 +94,6 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
   // load/fail fired) — see docs/realgram/TASK_SPLIT.md banner-ads-admin entry.
   useEffect(() => {
     if (!ADS_SUPPORTED || !ready || !interactionsDone) return;
-    _slotLoading[slot] = true;
     trackEvent('AD_BANNER_REQUEST', useAuthStore.getState().user?.deviceId, { slot });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slot, ready, interactionsDone]);
@@ -114,7 +111,6 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
       size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
       requestOptions={{ requestNonPersonalizedAdsOnly: true }}
       onAdLoaded={() => {
-        _slotLoading[slot] = false;
         retryIdxRef.current = 0;
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
@@ -132,7 +128,7 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
           const delay = AD_RETRY_BACKOFF_MS[retryIdxRef.current];
           retryIdxRef.current += 1;
           retryTimerRef.current = setTimeout(() => {
-            if (_slotLoading[slot] === false) return;   // instance unmounted meanwhile
+            if (!mountedRef.current) return;
             trackEvent('AD_BANNER_REQUEST', useAuthStore.getState().user?.deviceId, { slot });
             adRef.current?.load();
           }, delay);
@@ -141,7 +137,6 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
 
         // Backoff exhausted — stop retrying temporarily and let the parent fall
         // back to the promo/hide, same as a terminal failure always did.
-        _slotLoading[slot] = false;
         onAdFailedToLoad?.(error);
       }}
       onAdOpened={() => {

@@ -24,6 +24,8 @@ Set REALGRAM_BACKGROUND_CALL_E2E_VERIFIED=yes only after actual two-phone testin
 The Play build uses -PrealgramPlayBuild=true and removes REQUEST_INSTALL_PACKAGES.
 Its JS and native bridge disable website APK updates. Website builds retain them.
 
+Store text files are prepared in store/google-play/en-US and store/google-play/nb-NO.
+
 ## Store listing draft
 
 Name: Realgram

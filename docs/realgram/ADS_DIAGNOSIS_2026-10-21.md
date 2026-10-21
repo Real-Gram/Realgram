@@ -26,7 +26,8 @@ Historical banner visibility cannot be reconstructed from loaded callbacks.
   patch exposes Android AdListener.onAdImpression; AD_BANNER_SHOWN is distinct
   from revenue callbacks and provider-confirmed reports.
 - A pending banner retry could reload an ad after a successful load. The timer is
-  now cancelled on load. Retry requests are counted.
+  now cancelled on load. Retry requests are counted. Retries follow the mounted
+  banner instance, so a later SDK refresh failure can retry after an earlier success.
 - A ready but stale full-screen cache entry blocked new preloads. It is now
   discarded before attempting a replacement.
 - Source groups describing the same traffic are no longer added together in
@@ -46,7 +47,7 @@ Reward credits remain controlled by the existing server/provider verification.
 
 ## Validation and rollout
 
-TypeScript passed. All 48 Jest suites / 438 tests passed. Six in-memory PHP
+TypeScript passed. All 48 Jest suites / 438 tests passed. The additional banner-refresh regression and Play-update tests also passed (28 targeted checks). Six in-memory PHP
 reporting checks passed. Jest reports lingering handles in the overall suite;
 there were no failed assertions. Native bridge compilation/device verification
 and a signed release remain separate. The live helper alone was deployed;
