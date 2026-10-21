@@ -78,3 +78,16 @@ The site Android production button now uses the permanent local URL
 current signed release. The independent preview button points directly at a
 checksum-verified APK on realgram.no. No user needs GitHub login or a ZIP to
 install either Android build.
+
+## 21 October advertising and Play preparation
+
+AdMob API reporting was reconnected. The updated monetization helper reads
+current local shown callbacks without waiting for a backfill. Android banner
+source adds a pinned native impression callback independent of paid events.
+Loaded banners are not counted as shown. Pending retries are cancelled when a
+banner loads successfully; stale full-screen cache entries can be replaced.
+
+Play AAB workflow and API 36 tooling are prepared. Original signer/Firebase
+secrets, verified background calls, Play Console authentication and listing
+declarations remain publication blockers. See PLAY_RELEASE.md. Source/JS tests
+do not establish a signed release, native compatibility or store approval.

@@ -1,5 +1,7 @@
 package com.realgram.modules
 
+import com.realgram.BuildConfig
+
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.BroadcastReceiver
@@ -550,6 +552,10 @@ class XrayModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun downloadAndInstallApk(url: String, promise: Promise) {
+        if (BuildConfig.REALGRAM_PLAY_BUILD) {
+            promise.reject("PLAY_MANAGED_UPDATES", "Update Realgram through Google Play.")
+            return
+        }
         try {
             Log.i(TAG, "downloadAndInstallApk start url=$url sdk=${Build.VERSION.SDK_INT}")
 

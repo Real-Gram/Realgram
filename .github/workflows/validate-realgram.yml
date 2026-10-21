@@ -33,6 +33,7 @@ jobs:
       - name: Test backend
         run: |
           mkdir -p backend/data
+          php backend/scripts/test-ad-reporting.php
           php backend/scripts/test-calling.php
           php backend/scripts/test-messaging.php
           php backend/scripts/test-reliable-delivery.php

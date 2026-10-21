@@ -69,7 +69,11 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
   useEffect(() => {
     if (ready) return;
     let cancelled = false;
-    initAds().then(() => { if (!cancelled) setReady(true); });
+    initAds().then(() => {
+      if (cancelled) return;
+      if (isAdsInitialized()) setReady(true);
+      else onAdFailedToLoad?.(new Error('Mobile Ads initialization failed'));
+    });
     return () => { cancelled = true; };
   }, [ready]);
 
@@ -112,6 +116,8 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
       onAdLoaded={() => {
         _slotLoading[slot] = false;
         retryIdxRef.current = 0;
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
         trackEvent('AD_BANNER_LOADED', useAuthStore.getState().user?.deviceId, { slot });
         onAdLoaded?.();
       }}
@@ -127,6 +133,7 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
           retryIdxRef.current += 1;
           retryTimerRef.current = setTimeout(() => {
             if (_slotLoading[slot] === false) return;   // instance unmounted meanwhile
+            trackEvent('AD_BANNER_REQUEST', useAuthStore.getState().user?.deviceId, { slot });
             adRef.current?.load();
           }, delay);
           return;   // don't tell the parent yet — still retrying, keep showing pending state
@@ -142,8 +149,16 @@ export function TrackedBannerAd({ slot, onAdLoaded, onAdFailedToLoad }: Props) {
         // user taps the ad and it's about to open (browser/store).
         trackEvent('AD_BANNER_CLICK', useAuthStore.getState().user?.deviceId, { slot });
       }}
+      onAdImpression={() => {
+        // Native Android AdListener callback: never infer visibility from a
+        // load, a layout pass, or the optional impression-revenue callback.
+        trackEvent('AD_BANNER_SHOWN', useAuthStore.getState().user?.deviceId, {
+          slot, ad_unit_id: BANNER_UNIT_ID, platform: Platform.OS,
+        });
+      }}
       onPaid={(event: { value: number; currency: string }) => {
-        // Impression-level ad revenue — fires once per real, counted impression.
+        // Local SDK revenue signal; provider reporting remains authoritative.
+        // Keep this legacy event for existing revenue charts; SHOWN is separate.
         trackEvent('AD_BANNER_IMPRESSION', useAuthStore.getState().user?.deviceId, {
           slot, value: event.value, currency: event.currency,
         });
