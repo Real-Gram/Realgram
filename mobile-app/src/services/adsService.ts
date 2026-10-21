@@ -378,6 +378,10 @@ function scheduleAmbientRetry(): void {
  *  `_startRewardedVideoLoad`) — never further back than that. */
 export function preloadInterstitial(): void {
   if (!ADS_SUPPORTED) return;
+  if (_interReady && interstitialIsStale()) {
+    trackEvent('AD_CACHE_DROPPED', currentDeviceId(), { slot: 'interstitial', reason: 'expired_or_network_changed' });
+    dropInterstitial();
+  }
   if (_interReady || _interLoading) return;   // never start a second concurrent load
   if (!isAdsInitialized()) { initAds().then(preloadInterstitial); return; }
   const deviceId = currentDeviceId();

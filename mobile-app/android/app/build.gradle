@@ -31,7 +31,13 @@ react {
     debuggableVariants = []
 }
 
+def realgramPlayBuild = (project.findProperty("realgramPlayBuild") ?: "false").toBoolean()
+
 android {
+    buildFeatures { buildConfig true }
+    if (realgramPlayBuild) {
+        sourceSets { release { manifest.srcFile "src/play/AndroidManifest.xml" } }
+    }
     namespace          "com.realgram"
     compileSdk         rootProject.ext.compileSdkVersion
     buildToolsVersion  rootProject.ext.buildToolsVersion
@@ -39,6 +45,7 @@ android {
 
     defaultConfig {
         applicationId (System.getenv("REALGRAM_ANDROID_APPLICATION_ID") ?: "com.realgram")
+        buildConfigField "boolean", "REALGRAM_PLAY_BUILD", realgramPlayBuild.toString()
         minSdk         rootProject.ext.minSdkVersion
         targetSdk      rootProject.ext.targetSdkVersion
         versionCode    190

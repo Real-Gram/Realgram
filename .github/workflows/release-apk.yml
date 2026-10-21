@@ -37,16 +37,16 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
 
       - name: Install NDK and CMake
         run: sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
 
-      - name: Set up Gradle 8.7
+      - name: Set up Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.11.1'
 
       # ── JS dependencies ─────────────────────────────────────────────────────
       - name: Cache node_modules
@@ -69,7 +69,7 @@ jobs:
         working-directory: mobile-app/android
         run: |
           curl -fsSL \
-            "https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.11.1/gradle/wrapper/gradle-wrapper.jar" \
             -o gradle/wrapper/gradle-wrapper.jar
           chmod +x gradlew
 
@@ -77,7 +77,7 @@ jobs:
         run: |
           curl --fail --location --silent --show-error https://realgram.no/download/RealGram-0.9.149.apk -o "$RUNNER_TEMP/RealGram-installed.apk"
           echo "2abb5698098e3e243f9ad2acd6e92fad6bd7f35ad1f3d5da0d954fec74ec0a09  $RUNNER_TEMP/RealGram-installed.apk" | sha256sum --check
-          package_id=$("$ANDROID_SDK_ROOT/build-tools/34.0.0/aapt" dump badging "$RUNNER_TEMP/RealGram-installed.apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          package_id=$("$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$RUNNER_TEMP/RealGram-installed.apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
           test -n "$package_id"
           echo "::add-mask::$package_id"
           echo "REALGRAM_ANDROID_APPLICATION_ID=$package_id" >> "$GITHUB_ENV"
@@ -138,19 +138,33 @@ jobs:
             exit 1
           fi
 
-      - name: Decode release keystore
-        working-directory: mobile-app/android/app
-        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
-
-      - name: Write keystore.properties
-        working-directory: mobile-app/android
+      - name: Prepare release signing without shell interpolation
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          {
-            echo "storeFile=release.keystore"
-            echo "storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}"
-            echo "keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}"
-            echo "keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}"
-          } > keystore.properties
+          python3 - <<'PYSIGN'
+          import base64, os, pathlib
+          root = pathlib.Path('mobile-app/android')
+          key = root / 'app/release.keystore'
+          key.write_bytes(base64.b64decode(os.environ['RELEASE_KEYSTORE_BASE64'], validate=True))
+          key.chmod(0o600)
+          def prop(value):
+              return value.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace(' ', '\\ ')
+          values = {
+              'storeFile': 'release.keystore',
+              'storePassword': os.environ['RELEASE_STORE_PASSWORD'],
+              'keyAlias': os.environ['RELEASE_KEY_ALIAS'],
+              'keyPassword': os.environ['RELEASE_KEY_PASSWORD'],
+          }
+          if not all(values.values()):
+              raise SystemExit('Missing release signing configuration')
+          config = root / 'keystore.properties'
+          config.write_text(''.join(k + '=' + prop(v) + '\n' for k, v in values.items()))
+          config.chmod(0o600)
+          PYSIGN
 
       # ── Build ────────────────────────────────────────────────────────────────
       - name: Build release APKs
@@ -200,7 +214,7 @@ jobs:
         run: bash scripts/publish-android.sh mobile-app/android/app/build/outputs/apk/release
         env:
           GH_TOKEN: ${{ github.token }}
-          ANDROID_BUILD_TOOLS: ${{ env.ANDROID_SDK_ROOT }}/build-tools/34.0.0
+          ANDROID_BUILD_TOOLS: ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0
 
       - name: Update realgram.no Android APK and version
         run: bash scripts/deploy-android-website.sh mobile-app/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk

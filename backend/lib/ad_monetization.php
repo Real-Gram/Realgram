@@ -655,6 +655,16 @@ function am_status_label(string $sourceType): string {
  * `primary` is the single highest-trust group, for the KPI card headline;
  * `breakdown` is the full list, for the "source" tooltip / detail view.
  */
+function am_local_shown(PDO $pdo, string $from, string $to): int {
+    // Missing telemetry is zero observed events, never an inferred provider count.
+    if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_events'")->fetchColumn()) return 0;
+    $st = $pdo->prepare("SELECT COUNT(*) FROM app_events
+        WHERE event IN ('AD_INTERSTITIAL_SHOWN','AD_BANNER_SHOWN')
+        AND created_at >= ? AND created_at < datetime(?, '+1 day')");
+    $st->execute([$from . ' 00:00:00', $to . ' 00:00:00']);
+    return (int)$st->fetchColumn();
+}
+
 function am_provider_summary(PDO $pdo, string $provider, string $from, string $to): array {
     am_init_tables($pdo);
     $st = $pdo->prepare(
@@ -682,6 +692,12 @@ function am_provider_summary(PDO $pdo, string $provider, string $from, string $t
     }
     unset($g);
 
+    // API and local telemetry can describe the SAME impressions. Use the
+    // highest-trust traffic group instead of adding them together.
+    if ($best !== null) {
+        foreach (['requests', 'matched_requests', 'impressions', 'clicks'] as $key) $totals[$key] = (int)$best[$key];
+    }
+    if ($provider === 'admob') $totals['shown'] = am_local_shown($pdo, $from, $to);
     return ['breakdown' => $groups, 'primary' => $best] + $totals;
 }
 

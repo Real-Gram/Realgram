@@ -1,4 +1,5 @@
 import { Linking } from 'react-native';
+import { APP_DISTRIBUTION } from '../config/distribution';
 import { storage, syncGet } from '../storage/storage';
 import { APP_VERSION, APP_BUILD, APP_BUILD_CODE } from '../utils/version';
 import { trackEvent } from './analytics';
@@ -162,6 +163,7 @@ function isInRollout(info: VersionInfo, deviceCountry?: string): boolean {
 
 /** Check for available update. Returns null on network failure. */
 export async function checkForUpdate(deviceCountry?: string, channel: UpdateChannel = 'stable'): Promise<UpdateCheckResult | null> {
+  if (APP_DISTRIBUTION === 'play') return null;
   try {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 8_000);
@@ -272,6 +274,7 @@ function otaLog(step: string, detail?: unknown): void {
  * failure so the caller can surface it.
  */
 export async function openUpdateInBrowser(apkUrl: string): Promise<void> {
+  if (APP_DISTRIBUTION === 'play') throw Object.assign(new Error('Update Realgram through Google Play.'), { code: 'PLAY_MANAGED_UPDATES' });
   otaLog('OTA_BROWSER_FALLBACK_PRESSED', apkUrl);
   if (!apkUrl) {
     otaLog('OTA_BROWSER_FALLBACK_FAILED', 'empty apkUrl');
@@ -303,6 +306,7 @@ export type DownloadOutcome =
  * (INSTALL_PERMISSION_REQUIRED / APK_DOWNLOAD_FAILED / APK_INSTALL_FAILED / …).
  */
 export async function downloadUpdate(apkUrl: string, targetVersion?: string, targetCode?: number): Promise<DownloadOutcome> {
+  if (APP_DISTRIBUTION === 'play') throw Object.assign(new Error('Update Realgram through Google Play.'), { code: 'PLAY_MANAGED_UPDATES' });
   otaLog('button pressed', { apkUrl, targetVersion, targetCode });
   if (!apkUrl) {
     otaLog('aborted: empty apkUrl');

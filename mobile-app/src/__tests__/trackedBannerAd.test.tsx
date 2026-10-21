@@ -70,9 +70,13 @@ beforeEach(async () => {
   await initAds();
 });
 
+const mountedTrees: renderer.ReactTestRenderer[] = [];
+afterEach(() => { act(() => { for (const tree of mountedTrees.splice(0)) tree.unmount(); }); });
+
 async function mount(props: React.ComponentProps<typeof TrackedBannerAd>) {
   let tree!: renderer.ReactTestRenderer;
   await act(async () => { tree = renderer.create(<TrackedBannerAd {...props} />); });
+  mountedTrees.push(tree);
   return tree;
 }
 
@@ -186,5 +190,45 @@ describe('TrackedBannerAd — retry-with-backoff on failure, no remount (Khabat,
     const banner = tree.root.findByProps({ testID: 'banner-ad' });
     act(() => { banner.props.onAdLoaded(); });
     expect(onAdLoaded).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('banner visibility and pending retry lifetime', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+  it('records a shown callback without requiring a paid event', async () => {
+    const tree = await mount({ slot: 'home_banner' });
+    const banner = tree.root.findByProps({ testID: 'banner-ad' });
+    act(() => banner.props.onAdImpression());
+    expect(mockTrackEvent).toHaveBeenCalledWith('AD_BANNER_SHOWN', 'dev-test-1',
+      expect.objectContaining({ slot: 'home_banner', ad_unit_id: expect.any(String), platform: expect.any(String) }));
+    expect(mockTrackEvent).not.toHaveBeenCalledWith('AD_BANNER_IMPRESSION', expect.anything(), expect.anything());
+    act(() => tree.unmount());
+  });
+  it('does not reload a loaded creative when an older error retry is pending', async () => {
+    const tree = await mount({ slot: 'home_banner' });
+    const banner = tree.root.findByProps({ testID: 'banner-ad' });
+    const load = banner.parent!.instance.load as jest.Mock;
+    act(() => banner.props.onAdFailedToLoad(new Error('temporary')));
+    act(() => banner.props.onAdLoaded());
+    act(() => jest.advanceTimersByTime(5000));
+    expect(load).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+
+describe('SDK refresh retry after a prior successful banner load', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+  it('retries the mounted banner after a refresh fails', async () => {
+    const tree = await mount({ slot: 'home_banner' });
+    const banner = tree.root.findByProps({ testID: 'banner-ad' });
+    const load = banner.parent!.instance.load as jest.Mock;
+    act(() => banner.props.onAdLoaded());
+    act(() => banner.props.onAdFailedToLoad(new Error('refresh network error')));
+    act(() => jest.advanceTimersByTime(5000));
+    expect(load).toHaveBeenCalledTimes(1);
   });
 });
