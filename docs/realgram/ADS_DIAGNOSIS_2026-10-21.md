@@ -47,8 +47,11 @@ Reward credits remain controlled by the existing server/provider verification.
 
 ## Validation and rollout
 
-TypeScript passed. All 48 Jest suites / 438 tests passed. The additional banner-refresh regression and Play-update tests also passed (28 targeted checks). Seven in-memory PHP
+TypeScript passed. All 48 Jest suites / 439 tests passed. The additional banner-refresh regression and Play-update tests also passed (28 targeted checks). Seven in-memory PHP
 reporting checks passed. Jest reports lingering handles in the overall suite;
-there were no failed assertions. Native bridge compilation/device verification
-and a signed release remain separate. The live helper alone was deployed;
+there were no failed assertions. Android API 36 debug compilation (including the native banner bridge) passed in
+https://github.com/Real-Gram/Realgram/actions/runs/39676963651 at source 9442d7d.
+The final JS/backend changes passed
+https://github.com/Real-Gram/Realgram/actions/runs/39678346175 at d29fa62.
+Physical-device verification and a signed production release remain separate. The live helper alone was deployed;
 the website APK is unchanged.

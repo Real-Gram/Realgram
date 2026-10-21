@@ -91,3 +91,12 @@ Play AAB workflow and API 36 tooling are prepared. Original signer/Firebase
 secrets, verified background calls, Play Console authentication and listing
 declarations remain publication blockers. See PLAY_RELEASE.md. Source/JS tests
 do not establish a signed release, native compatibility or store approval.
+
+
+Final verification for the advertising/Play preparation:
+Android API 36 debug compilation succeeded in Actions run 39676963651.
+The native-source snapshot was 9442d7d; later JS/backend changes passed
+48 suites / 439 tests plus relay/backend validation in run 39678346175 at d29fa62.
+The debug artifact was retained for validation only; no website update or
+Google Play submission was performed. Original signer/Firebase secrets,
+physical background-call tests and Console declarations remain outstanding.

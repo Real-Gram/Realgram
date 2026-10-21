@@ -9,9 +9,22 @@
 - Play Console is not authenticated in this publishing session. Existing listing/package, account type and production eligibility are unverified.
 - API 34 was below current Play submission requirements. This change prepares API 36, AGP 8.9.1 and Gradle 8.11.1; native build/device validation is still required.
 
+## Verified build results
+
+Android API 36 debug compilation passed, including the native ad bridge:
+https://github.com/Real-Gram/Realgram/actions/runs/39676963651 (9442d7d).
+Final app/backend validation passed: 48 app suites / 439 tests, four calling
+relay checks and backend checks including seven ad-reporting assertions:
+https://github.com/Real-Gram/Realgram/actions/runs/39678346175 (d29fa62).
+
+A debug build is not a signed production AAB. Physical background-call testing,
+the Play-specific release manifest and the signed bundle still require validation.
+
 ## Bundle workflow
 
-Use Actions → Release Google Play Bundle on the reviewed branch. It produces a
+First integrate the reviewed changes, including the workflow, into the default
+branch. A new workflow must exist there before GitHub exposes manual dispatch.
+Then use Actions → Release Google Play Bundle on the reviewed release branch. It produces a
 signed AAB without deploying the website or submitting a release to Google.
 It retains the installed-package identity and background-calling release gates.
 Do not create a replacement signing key: Play App Signing must preserve update
