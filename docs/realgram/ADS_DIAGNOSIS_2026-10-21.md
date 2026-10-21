@@ -47,7 +47,7 @@ Reward credits remain controlled by the existing server/provider verification.
 
 ## Validation and rollout
 
-TypeScript passed. All 48 Jest suites / 438 tests passed. The additional banner-refresh regression and Play-update tests also passed (28 targeted checks). Six in-memory PHP
+TypeScript passed. All 48 Jest suites / 438 tests passed. The additional banner-refresh regression and Play-update tests also passed (28 targeted checks). Seven in-memory PHP
 reporting checks passed. Jest reports lingering handles in the overall suite;
 there were no failed assertions. Native bridge compilation/device verification
 and a signed release remain separate. The live helper alone was deployed;

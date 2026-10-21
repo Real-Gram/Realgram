@@ -695,7 +695,7 @@ function am_provider_summary(PDO $pdo, string $provider, string $from, string $t
     // API and local telemetry can describe the SAME impressions. Use the
     // highest-trust traffic group instead of adding them together.
     if ($best !== null) {
-        foreach (array_keys($totals) as $key) $totals[$key] = (int)$best[$key];
+        foreach (['requests', 'matched_requests', 'impressions', 'clicks'] as $key) $totals[$key] = (int)$best[$key];
     }
     if ($provider === 'admob') $totals['shown'] = am_local_shown($pdo, $from, $to);
     return ['breakdown' => $groups, 'primary' => $best] + $totals;

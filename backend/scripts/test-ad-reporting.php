@@ -13,10 +13,11 @@ $db->exec("INSERT INTO app_events VALUES
 function verify($ok, $name) { if (!$ok) throw new RuntimeException($name); echo "PASS $name\n"; }
 verify(am_local_shown($db, '2026-10-21', '2026-10-21') === 2, 'only actual shown callbacks, bounded by date');
 am_daily_metric_upsert($db, ['date'=>'2026-10-21','provider'=>'admob','ad_unit_id'=>'provider-unit','source_type'=>'PROVIDER_API','impressions'=>69,'requests'=>1648,'revenue'=>0.05,'currency'=>'USD']);
-am_daily_metric_upsert($db, ['date'=>'2026-10-21','provider'=>'admob','ad_unit_id'=>'local-unit','source_type'=>'LOCAL_SDK_EVENT','impressions'=>15,'requests'=>20,'revenue'=>0.01,'currency'=>'USD']);
+am_daily_metric_upsert($db, ['date'=>'2026-10-21','provider'=>'admob','ad_unit_id'=>'local-unit','source_type'=>'LOCAL_SDK_EVENT','impressions'=>15,'requests'=>20,'rewards_granted'=>1,'revenue'=>0.01,'currency'=>'USD']);
 $r=am_provider_summary($db,'admob','2026-10-21','2026-10-21');
 verify($r['shown'] === 2, 'shown reads current telemetry without backfill');
 verify($r['impressions'] === 69 && $r['requests'] === 1648, 'local and provider traffic are not counted twice');
+verify($r['rewards_granted'] === 1, 'local reward bookkeeping is independent of provider traffic');
 verify($r['primary']['source_type'] === 'PROVIDER_API' && count($r['breakdown']) === 2, 'source provenance retained');
 verify(abs($r['primary']['revenue']-0.05)<0.000001, 'provider revenue unchanged');
 $empty=new PDO('sqlite::memory:');
