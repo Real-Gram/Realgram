@@ -73,8 +73,8 @@ checks; do not bypass it to ship the redesign.
 - All 75 backend calling checks pass in an isolated temporary directory with an
   in-memory SQLite database, including free callers, retained abuse guards and
   optional TLS TURN validation. No production database is used.
-- Naming and app import-graph checks pass. Android native/build and physical
-  device verification are tracked separately from these source checks.
+- Naming and app import-graph checks pass. Android native compilation passed in CI; physical
+  device verification remains a separate release check.
 - The full Jest run reports an existing worker-shutdown/timer warning; all test
   assertions pass. Focused new messenger tests exit cleanly.
 
@@ -86,4 +86,14 @@ See IMO_CONNECTIVITY_2026-10-22.md. No production auth/database change was made.
 A local Android production JS bundle also succeeds. Bundle inspection identified
 an inherited game-wordmark footer in Settings; the messenger release now uses
 Realgram's free-messaging label there. The release boundary check also excludes
-that ecosystem/game footer. This is independent of the pending native CI build.
+that ecosystem/game footer. This is independent of native compilation, which also passed.
+
+Final build evidence: Android Debug APK succeeded for implementation commit
+834775f in https://github.com/Real-Gram/Realgram/actions/runs/39835217291.
+Source validation at that commit passed all 49 mobile suites / 444 tests, 75
+calling checks and the messaging/relay checks:
+https://github.com/Real-Gram/Realgram/actions/runs/39835133016.
+The subsequent Settings-footer-only change at 5a8cbd2 passes TypeScript and a
+fresh Android production JS bundle (seven image assets). No Android native
+project file changed in that follow-up. This is still not a signed production
+AAB or verified background-call/target-network result.

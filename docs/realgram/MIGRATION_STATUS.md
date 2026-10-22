@@ -116,3 +116,9 @@ Production check on 22 October: the public WSS upgrade succeeds, but the API
 rejects the canonical client's identifier with `invalid token`. Matching backend
 activation and installed-client compatibility remain mandatory before publishing.
 See IMO_CONNECTIVITY_2026-10-22.md. No production auth/database change was made.
+
+Messenger implementation verification: Android debug native build passed in
+Actions run 39835217291 (834775f). The final Settings footer cleanup also passes
+TypeScript and production JS bundling. Source tests: 49 suites / 444 tests and
+75 calling assertions. Production API auth, phone/network tests and signed Play
+publication remain outstanding; see MESSENGER_RELEASE.md for exact build refs.
