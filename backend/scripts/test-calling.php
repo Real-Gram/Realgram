@@ -78,11 +78,12 @@ $row = $db->query("SELECT * FROM call_sessions WHERE call_id='{$r['call_id']}'")
 check('session row status starts ringing', $row['status'], 'ringing');
 check('caller/callee devices persisted', $row['caller_device'] . '|' . $row['callee_device'], 'dev-a|dev-b');
 
-echo "\n== call_initiate — premium gate (caller only, per calling.php's documented open decision) ==\n";
+echo "\n== call_initiate — free audio calling ==\n";
 $db = fresh_db();
 mk_device($db, 'dev-a', ['plan' => 'free']);
 mk_device($db, 'dev-b', ['plan' => 'free']);
-check_throws('free-plan caller is rejected', fn() => call_initiate($db, 'dev-a', 'dev-b'));
+$freeCall = call_initiate($db, 'dev-a', 'dev-b');
+check_true('free-plan caller can call a free-plan recipient', $freeCall['call_id'] !== '');
 
 $db = fresh_db();
 mk_device($db, 'dev-a', ['plan' => 'premium']);
@@ -301,6 +302,22 @@ $before = microtime(true);
 call_mark_accepted($db, $r['call_id'], 'dev-b');
 check_true('an unreachable relay does not throw or hang the caller', (microtime(true) - $before) < 1.0);
 check('call still marked accepted despite the push failing', call_active_for($db, 'dev-b')['status'] ?? null, 'accepted');
+
+echo "\n== TURN TLS fallback ==\n";
+$db = fresh_db();
+mk_device($db, 'dev-a'); mk_device($db, 'dev-b');
+$r = call_initiate($db, 'dev-a', 'dev-b');
+$db->prepare("UPDATE settings SET value=? WHERE key='calling_turn_tls_url'")->execute(['turns:turn.realgram.no:443?transport=tcp']);
+$ice = call_ice_servers($db, $r['call_id'], 'dev-a')['ice_servers'];
+check('TLS endpoint alone does not advertise unauthenticated TURN', count($ice), 1);
+$db->prepare("UPDATE settings SET value=? WHERE key='calling_turn_secret'")->execute(['test-turn-secret']);
+$ice = call_ice_servers($db, $r['call_id'], 'dev-a')['ice_servers'];
+check_true('configured TLS 443 is offered alongside UDP and TCP', in_array('turns:turn.realgram.no:443?transport=tcp', $ice[1]['urls'], true) && count($ice[1]['urls']) === 3);
+check_true('TURN credentials are temporary and server-signed', $ice[1]['credential'] !== '' && str_ends_with($ice[1]['username'], ':dev-a'));
+$db->prepare("UPDATE settings SET value=? WHERE key='calling_turn_tls_url'")->execute(['http://turn.realgram.no:443']);
+$ice = call_ice_servers($db, $r['call_id'], 'dev-a')['ice_servers'];
+check('invalid TLS setting cannot replace working TURN paths', count($ice[1]['urls']), 2);
+check_throws('outsider cannot receive relay credentials', fn() => call_ice_servers($db, $r['call_id'], 'dev-outsider'));
 
 echo "\n" . ($fail === 0 ? "ALL $pass TESTS PASSED\n" : "$fail FAILED, $pass PASSED\n");
 exit($fail === 0 ? 0 : 1);

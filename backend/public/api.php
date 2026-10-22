@@ -2273,7 +2273,7 @@ if ($method === 'POST') {
         re_ensure_schema($pdo);
         $dev = qe_resolve_device($pdo, $peerDeviceId);
         if (!$dev) err('device not found');
-        $account = re_linked_account($pdo, $peerDeviceId);
+        $account = re_linked_account($pdo, $dev['device_id']);
         $profile = $account !== '' ? re_get_profile($pdo, $account) : [];
 
         // Khabat, 2026-07-31: "vis profil" only ever opened this thin handle/
@@ -2288,7 +2288,7 @@ if ($method === 'POST') {
         // auth check"). Pick out only level/chapters/clan and keep
         // everything else out — do not widen this to array_merge($summary).
         $playerFields = [];
-        if ($account !== '') {
+        if ($account !== '' && empty($_GET['messenger_only'])) {
             $summary = re_fetch_profile_summary($pdo, $account);
             if ($summary !== null) {
                 $playerFields = [

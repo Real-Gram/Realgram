@@ -7,56 +7,11 @@
  * so calling shares the exact same trust boundary as DMs — a user blocked
  * from messaging someone is blocked from calling them too).
  *
- * `docs/realgram/TASK_SPLIT.md` A→B(162)/(164)/(166): Khabat asked for
- * friend-to-friend calling in the Inbox, audio first (video parked),
- * premium-gated, with the real-time media relay (TURN) kept off this VPS
- * — One.com blocks inbound UDP at the hypervisor level, confirmed during
- * the Starlink WireGuard work, so TURN has to live on `fi-hel` (Hetzner)
- * or a similar box, not here.
- *
- * ARCHITECTURE — why this file only does REST bookkeeping, not the
- * real-time signaling itself:
- *   This PHP backend (api.php) is stateless request/response — it can't
- *   hold an open connection to push "you have an incoming call" to a
- *   device that isn't actively polling. Real-time signaling (SDP offer/
- *   answer, ICE candidates, ring/accept/decline) needs a persistent
- *   connection, so it runs on a small standalone Node/socket.io relay
- *   (see calling-relay/, not deployed yet — same fi-hel-vs-this-box
- *   question as TURN, though this relay is light enough to not force the
- *   TURN answer either way).
- *
- *   This file is the *trust boundary* for that relay: the relay itself
- *   has no database and can't check premium status, blocks, or rate
- *   limits — it just relays messages between two sockets it's told to
- *   connect. Every call has to start here first (call_initiate()), which
- *   does all the real authorization checks and mints a short-lived signed
- *   voucher (HMAC-SHA256, same pattern as real_economy.php's
- *   re_verify_link_proof()) that the relay can verify on its own without
- *   a network round-trip back to this box.
- *
- * OPEN PRODUCT DECISIONS (flagged in TASK_SPLIT.md B→A(168), not silently
- * assumed — confirm before this ships):
- *   1. Only the CALLER needs to be premium to place a call; the callee
- *      can be a free-plan user answering. (Matches how most "premium
- *      feature" gates work — the person using the feature pays — but
- *      it's a real product call, not an obvious default.)
- *   2. V1 only delivers a ring while the callee's app is foregrounded
- *      (actively connected to the relay). No push-wake for a backgrounded/
- *      killed app yet — that needs real APNs VoIP-push (+CallKit) and FCM
- *      integration, a separate, larger phase. Calling someone whose app
- *      isn't open just reports "unavailable," same as any other offline
- *      state — an honest V1 limitation, not a bug.
- *
- * RESOLVED since (168): Khabat's testing-phase ask (A→B(170)) — calling
- * restricted to exactly her account + the Iran tester's, on top of (not
- * instead of) the premium gate — is `calling_allowlist` /
- * call_is_allowlisted() below. Empty allowlist = no restriction (the
- * eventual general-rollout state); this ships non-empty for now.
- *
- * fi-hel's coturn is installed+configured (A→B(168), Agent A) but not yet
- * started pending Khabat's go-ahead on the shared Starlink box — TURN
- * credential minting (call_ice_servers()) degrades to STUN-only until
- * calling_turn_secret is set, so this doesn't block shipping the rest.
+ * Messenger release: audio calling is free. Blocks, rate limits, short-lived
+ * vouchers and deployment rollout controls remain enforced here. Android
+ * background delivery uses the calling relay's FCM integration; shipping it
+ * still requires credentials and real-device verification. Media uses WebRTC
+ * with server-issued TURN credentials; signaling uses the separate WSS relay.
  */
 
 require_once __DIR__ . '/call_push.php';
@@ -88,6 +43,8 @@ const CALL_SERVICE_SETTING_DEFAULTS = [
     // STUN only, no TURN relay (fine on networks that don't need one, a
     // hard failure on restrictive NATs/firewalls).
     'calling_turn_secret' => '',
+    // Set only after a real TLS listener and certificate have been verified.
+    'calling_turn_tls_url' => '',
     // Where the relay's internal push hook (calling-relay/server.js,
     // POST /internal/push) listens, e.g. http://127.0.0.1:8096/internal/push
     // — empty = real-time "you have an incoming call" push is skipped;
@@ -98,8 +55,7 @@ const CALL_SERVICE_SETTING_DEFAULTS = [
     // on purpose (see calling-relay/README.md's "why two secrets").
     'calling_relay_internal_secret' => '',
     // Comma-separated device_id and/or user_id values. Empty = no
-    // restriction (final rollout state, gated only by the premium plan
-    // check). Non-empty = ONLY listed identities may place or receive
+    // extra rollout restriction (normal identity/block checks still apply). Non-empty = ONLY listed identities may place or receive
     // calls — Khabat's testing-phase ask (TASK_SPLIT.md A→B(170)): just
     // her account and the Iran tester's while this is being validated.
     'calling_allowlist' => '',
@@ -150,13 +106,14 @@ function call_service_config(PDO $pdo): array {
     return [
         'relay_secret'          => trim((string)($rows['calling_relay_secret'] ?? '')),
         'turn_secret'           => trim((string)($rows['calling_turn_secret'] ?? '')),
+        'turn_tls_url'          => trim((string)($rows['calling_turn_tls_url'] ?? '')),
         'relay_internal_url'    => trim((string)($rows['calling_relay_internal_url'] ?? '')),
         'relay_internal_secret' => trim((string)($rows['calling_relay_internal_secret'] ?? '')),
         'allowlist'             => trim((string)($rows['calling_allowlist'] ?? '')),
     ];
 }
 
-/** Empty allowlist = no restriction (final rollout state, premium check
+/** Empty allowlist = no restriction (final rollout state, identity check
  *  alone gates access). Non-empty = the device_id AND user_id are checked
  *  against it, so either identifier can be used to allowlist an account. */
 function call_is_allowlisted(array $cfg, array $device): bool {
@@ -291,7 +248,7 @@ function call_active_for(PDO $pdo, string $deviceId): ?array {
 }
 
 /**
- * Start a call. Does every real authorization check (premium, blocks,
+ * Start a call. Does every real authorization check (identity, blocks,
  * rate limit, no-call-already-in-flight) so the relay itself never has to.
  * Throws \RuntimeException with a client-safe message on any failure.
  * Returns ['call_id', 'voucher', 'callee_device', 'callee_user_id', 'relay_enabled'].
@@ -307,7 +264,6 @@ function call_initiate(PDO $pdo, string $callerDevice, string $calleeParam, stri
     if (!$caller)                            throw new \RuntimeException('caller not found');
     if ((int)($caller['blocked'] ?? 0))      throw new \RuntimeException('caller is blocked');
     // Premium gate — caller only (see file header, open decision #1).
-    if (($caller['plan'] ?? 'free') === 'free') throw new \RuntimeException('calling is a premium feature');
     // Testing-phase allowlist — Khabat, TASK_SPLIT.md A→B(170): both sides
     // must be listed while calling is restricted to her + the Iran tester.
     if (!call_is_allowlisted($cfg, $caller)) throw new \RuntimeException('calling is not available on your account yet');
@@ -401,11 +357,17 @@ function call_ice_servers(PDO $pdo, string $callId, string $deviceId): array {
         $ttl = 300;
         $username = (string)(time() + $ttl) . ':' . $deviceId;
         $credential = base64_encode(hash_hmac('sha1', $username, $cfg['turn_secret'], true));
+        $urls = [
+            'turn:' . CALL_TURN_HOST . ':3478?transport=udp',
+            'turn:' . CALL_TURN_HOST . ':3478?transport=tcp',
+        ];
+        // Additive TLS fallback for networks blocking UDP / non-443 ports.
+        // Never invent an endpoint or disable certificate verification.
+        if (preg_match('/^turns:[a-z0-9.-]+:443\?transport=tcp$/iD', $cfg['turn_tls_url'])) {
+            $urls[] = $cfg['turn_tls_url'];
+        }
         $servers[] = [
-            'urls' => [
-                'turn:' . CALL_TURN_HOST . ':3478?transport=udp',
-                'turn:' . CALL_TURN_HOST . ':3478?transport=tcp',
-            ],
+            'urls' => $urls,
             'username'   => $username,
             'credential' => $credential,
         ];

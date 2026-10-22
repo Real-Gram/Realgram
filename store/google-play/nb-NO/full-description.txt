@@ -1,7 +1,7 @@
-Realgram samler meldinger og VPN-tilkobling i én Android-app.
+Realgram samler samtaler, taleanrop og venner i én app.
 
-Opprett profilen din, utveksle meldinger og velg en VPN-tilkobling fra samme grensesnitt.
+Utveksle meldinger, start taleanrop fra en samtale og ring tilbake fra anropshistorikken. Behold messenger-profilen din og del en invitasjonskode for å bygge en klan av inviterte venner.
 
-Gratis tilgang kan inneholde annonser. Funksjoner og tilgjengelighet avhenger av appversjon og tjenesteinnstillinger.
+Realgram er gratis å bruke og finansieres med reklame. Det kreves ingen abonnement eller betaling i appen. Frivillige belønningsannonser kan gi ekstra tilkoblingsdata.
 
-Les mer på https://realgram.no/
+Tilkoblingsverktøy er tilgjengelige separat. Datakvoter gjelder for tilkobling. Internett er nødvendig.

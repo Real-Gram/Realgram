@@ -11,7 +11,6 @@ import { Colors, Typography, Spacing, Radius, Layout } from '../design/tokens';
 import { GlassCard } from '../components/GlassCard';
 import { AdBanner } from '../components/AdBanner';
 import { BottomNav } from '../components/BottomNav';
-import { EmberField } from '../components/EmberField';
 import { GoldButton } from '../components/GoldButton';
 import { VipBadge } from '../components/VipBadge';
 import { PeerProfileSheet } from '../components/PeerProfileSheet';
@@ -81,7 +80,8 @@ export function burnRemaining(expiresAt: string, nowMs: number): string {
 }
 
 interface Props {
-  onBack: () => void;
+  onBack?: () => void;
+  embedded?: boolean;
   /** Deep-link: open straight into this conversation (push-notification tap). */
   initialThreadKey?: string | null;
 }
@@ -93,7 +93,7 @@ interface Props {
  * opens the same chat-bubble view. A push-notification tap deep-links straight
  * into its thread via `initialThreadKey`.
  */
-export function InboxScreen({ onBack, initialThreadKey }: Props) {
+export function InboxScreen({ onBack, initialThreadKey, embedded = false }: Props) {
   const { t } = useT();
   const insets      = useSafeAreaInsets();
 
@@ -117,19 +117,8 @@ export function InboxScreen({ onBack, initialThreadKey }: Props) {
   const myId        = user?.userId ?? '';
   const isVip       = isVipUser(user?.inviteCount ?? 0, user?.milestones ?? null);
 
-  // Audio calling (Khabat, 2026-07-28: "ikke bare når Inbox er åpen") —
-  // the connection + incoming-call listening now lives in callStore.ts,
-  // owned by CallManager at the root of AppNavigator so it rings
-  // regardless of which screen is open, not just this one. This screen
-  // only starts outgoing calls; premium-gated client-side (the real
-  // restriction, a two-account testing allowlist, is server-side per her
-  // (170) ask and isn't visible to this screen, so a premium-but-not-
-  // allowlisted account would still get a real error from placeCall —
-  // acceptable during this testing phase).
-  // Khabat, 2026-07-29: this used to ignore CALLING_ENABLED entirely, so the
-  // call icon kept showing (and doing nothing but toast) while calling was
-  // supposedly off app-wide — see config/featureFlags.ts's own note.
-  const canCall = CALLING_ENABLED && (user?.plan !== 'free' || !!user?.testMode);
+  // Free calling, subject to backend safety/rollout controls.
+  const canCall = CALLING_ENABLED;
   const startCall = useCallStore((s) => s.startOutgoingCall);
 
   // Direct messages
@@ -545,17 +534,13 @@ export function InboxScreen({ onBack, initialThreadKey }: Props) {
   );
 
   return (
-    <View style={styles.screen}>
-      <EmberField count={6} />
+    <View style={[styles.screen, embedded && { paddingBottom: BottomNav.CONTENT_HEIGHT + insets.bottom }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn} activeOpacity={0.7} onPress={onBack}
-          hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
-        >
+        {!embedded && <TouchableOpacity style={styles.backBtn} onPress={onBack} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <Text style={styles.backIcon}>‹</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('pr.inbox')}</Text>
+        </TouchableOpacity>}
+        <Text style={styles.title}>{embedded ? 'Realgram' : t('nav.chats')}</Text>
         <TouchableOpacity
           style={styles.searchBtn}
           activeOpacity={0.7}
@@ -707,7 +692,7 @@ export function InboxScreen({ onBack, initialThreadKey }: Props) {
             floating tabBar overlay (AppNavigator.tsx) supplies it instead, so
             without this the last row sits behind it (same bug reported on
             RealGramClanScreen, 2026-07-23 — same fix applied here). */}
-        <View style={{ height: BottomNav.CONTENT_HEIGHT + insets.bottom + Spacing[4] }} />
+        <View style={{ height: Spacing[4] + (embedded ? 0 : insets.bottom) }} />
       </ScrollView>
 
       {/* Chat thread modal — Telegram-style conversation for DMs + official */}
@@ -912,7 +897,7 @@ export function InboxScreen({ onBack, initialThreadKey }: Props) {
                   DM thread). */}
               {openConvo.support && (
                 <AdBanner
-                  show={user?.plan === 'free' || !!user?.testMode}
+                  show
                   slot="inbox_banner"
                   style={styles.threadAdBanner}
                 />
@@ -1126,7 +1111,7 @@ const styles = StyleSheet.create({
   backBtn:       { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, alignItems: 'center', justifyContent: 'center' },
   backIcon:      { fontSize: 26, color: Colors.text.secondary, marginTop: -2 },
   title:         { fontSize: Typography.size.xl, fontFamily: Typography.family.heading, color: Colors.text.primary },
-  newBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  newBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.blue[400], alignItems: 'center', justifyContent: 'center' },
   newBtnText:    { fontSize: 22, color: '#241605', marginTop: -2, fontWeight: '700' },
   searchBtn:     { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginRight: 6 },
   searchBtnText: { fontSize: 16 },
@@ -1137,15 +1122,15 @@ const styles = StyleSheet.create({
   contactStrip:       { flexGrow: 0 },
   contactStripContent:{ paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing[2], gap: Spacing[3] },
   contactChip:        { alignItems: 'center', width: 58, gap: 5 },
-  contactRing:         { width: 54, height: 54, borderRadius: 27, borderWidth: 2, borderColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  contactRing:         { width: 54, height: 54, borderRadius: 27, borderWidth: 2, borderColor: Colors.blue[400], alignItems: 'center', justifyContent: 'center' },
   contactName:         { fontSize: 10, fontFamily: Typography.family.body, color: Colors.text.muted, maxWidth: 58 },
 
   // Category tabs.
   categoryTabs:        { flexDirection: 'row', gap: Spacing[2], paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing[2] },
   categoryTab:         { paddingHorizontal: Spacing[4], paddingVertical: 7, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border.default, backgroundColor: Colors.bg.surface },
-  categoryTabActive:   { backgroundColor: 'rgba(255,182,39,0.12)', borderColor: Colors.border.goldGlow },
+  categoryTabActive:   { backgroundColor: 'rgba(51,153,255,0.12)', borderColor: 'rgba(51,153,255,0.35)' },
   categoryTabText:     { fontSize: 12, fontFamily: Typography.family.label, color: Colors.text.muted },
-  categoryTabTextActive:{ color: Colors.gold[400], fontWeight: '700' },
+  categoryTabTextActive:{ color: Colors.blue[400], fontWeight: '700' },
 
   scroll:        { flex: 1 },
   content:       { paddingHorizontal: Layout.screenPadding, gap: Spacing[3], paddingTop: Spacing[1] },
@@ -1166,7 +1151,7 @@ const styles = StyleSheet.create({
   avatar:        { backgroundColor: Colors.bg.base, borderWidth: 1, borderColor: Colors.border.default, alignItems: 'center', justifyContent: 'center' },
   avatarOfficial:{ backgroundColor: 'rgba(255,182,39,0.10)', borderColor: 'rgba(255,182,39,0.4)' },
   avatarNode:    { backgroundColor: 'rgba(51,211,255,0.16)', borderColor: 'rgba(123,92,250,0.35)' },
-  avatarText:    { fontSize: Typography.size.lg, fontFamily: Typography.family.heading, color: Colors.gold[400] },
+  avatarText:    { fontSize: Typography.size.lg, fontFamily: Typography.family.heading, color: Colors.blue[400] },
   // Cyan, not gold — the fuller Chats reference (Khabat's later upload)
   // specifically colors the verified checkmark cyan, distinct from the
   // official avatar's own gold accent.
@@ -1174,7 +1159,7 @@ const styles = StyleSheet.create({
   verifiedText:  { fontSize: 10, color: '#001824', fontWeight: '700' },
 
   threadPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
-  unreadBadge:   { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, backgroundColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  unreadBadge:   { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, backgroundColor: Colors.blue[400], alignItems: 'center', justifyContent: 'center' },
   unreadBadgeText: { fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: '#241605', fontWeight: '700' },
 
   // Chat thread modal
@@ -1184,7 +1169,7 @@ const styles = StyleSheet.create({
   threadPeerWrap:{ flex: 1 },
   threadPeerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   threadPeer:    { flexShrink: 1, fontSize: Typography.size.lg, fontFamily: Typography.family.heading, color: Colors.text.primary },
-  threadSubtitle:{ fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: Colors.gold[400] },
+  threadSubtitle:{ fontSize: Typography.size.xs, fontFamily: Typography.family.label, color: Colors.blue[400] },
   threadDeleteBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, alignItems: 'center', justifyContent: 'center' },
   threadDeleteIcon: { fontSize: 16 },
 
@@ -1209,18 +1194,18 @@ const styles = StyleSheet.create({
   bubbleRowIn:   { justifyContent: 'flex-start' },
   bubble:        { maxWidth: '82%', borderRadius: Radius.lg, paddingHorizontal: Spacing[3], paddingVertical: Spacing[2] },
   bubbleIn:      { backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.subtle, borderTopLeftRadius: 4 },
-  bubbleOut:     { backgroundColor: Colors.gold[400], borderTopRightRadius: 4 },
-  bubbleTitle:   { fontSize: Typography.size.sm, fontFamily: Typography.family.heading, color: Colors.gold[400], marginBottom: 3 },
+  bubbleOut:     { backgroundColor: Colors.blue[400], borderTopRightRadius: 4 },
+  bubbleTitle:   { fontSize: Typography.size.sm, fontFamily: Typography.family.heading, color: Colors.blue[400], marginBottom: 3 },
   bubbleText:    { fontSize: Typography.size.sm, fontFamily: Typography.family.body, color: Colors.text.primary, lineHeight: 20 },
   bubbleTextOut: { color: '#241605' },
   bubbleLinkBtn: { marginTop: 6, alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.12)', borderRadius: Radius.sm, paddingHorizontal: Spacing[2], paddingVertical: 4 },
-  bubbleLinkText: { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.gold[400] },
+  bubbleLinkText: { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.blue[400] },
   bubbleTime:    { fontSize: 9, fontFamily: Typography.family.mono, color: Colors.text.muted, alignSelf: 'flex-end', marginTop: 2 },
   bubbleTimeOut: { color: 'rgba(2,27,16,0.6)' },
 
   reactionBadgeRow: { flexDirection: 'row', gap: 4, marginTop: -6, marginBottom: 6, paddingHorizontal: 4 },
   reactionBadge:    { flexDirection: 'row', backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.subtle, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 },
-  reactionBadgeMine:{ borderColor: Colors.gold[400] },
+  reactionBadgeMine:{ borderColor: Colors.blue[400] },
   reactionBadgeText:{ fontSize: 11, color: Colors.text.secondary },
 
   // No alignSelf here (bug fix 2026-07-22, chat audit #3): it used to be
@@ -1241,7 +1226,7 @@ const styles = StyleSheet.create({
   burnChipText:  { fontSize: 13, color: '#FF8C3C', fontFamily: Typography.family.mono },
   threadInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing[2], paddingHorizontal: Layout.screenPadding, paddingVertical: Spacing[3], paddingBottom: Spacing[6], borderTopWidth: 1, borderTopColor: Colors.border.subtle },
   threadInput:   { flex: 1, maxHeight: 110, borderRadius: Radius.lg, backgroundColor: Colors.bg.surface, borderWidth: 1, borderColor: Colors.border.default, paddingHorizontal: Spacing[3], paddingVertical: Platform.OS === 'ios' ? 12 : 8, color: Colors.text.primary, fontFamily: Typography.family.body, fontSize: Typography.size.base },
-  threadSendBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: Colors.gold[400], alignItems: 'center', justifyContent: 'center' },
+  threadSendBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: Colors.blue[400], alignItems: 'center', justifyContent: 'center' },
   threadSendText:{ fontSize: 20, color: '#241605', fontWeight: '700' },
   introNote:     { backgroundColor: 'rgba(255,182,39,0.06)', borderWidth: 1, borderColor: 'rgba(255,182,39,0.2)', borderRadius: Radius.lg, padding: Spacing[3], marginBottom: Spacing[2] },
   introText:     { fontSize: Typography.size.xs, fontFamily: Typography.family.body, color: Colors.text.secondary, textAlign: 'center', lineHeight: 18 },

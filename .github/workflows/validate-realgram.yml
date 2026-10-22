@@ -21,6 +21,8 @@ jobs:
       - name: Install app dependencies
         working-directory: mobile-app
         run: npm install
+      - name: Check messenger release boundaries
+        run: node scripts/check-messenger-release.cjs
       - name: Check TypeScript
         working-directory: mobile-app
         run: npm run type-check
