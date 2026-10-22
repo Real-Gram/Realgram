@@ -100,3 +100,25 @@ The native-source snapshot was 9442d7d; later JS/backend changes passed
 The debug artifact was retained for validation only; no website update or
 Google Play submission was performed. Original signer/Firebase secrets,
 physical background-call tests and Console declarations remain outstanding.
+
+## Messenger-first release — 22 October 2026
+
+The isolated `feat/realgram-messenger-first-20261022` branch builds on the current
+ads/Play preparation branch, preserving its parallel work. It opens into Chats,
+retains calls, connection tools and clan invitations, replaces the game-dependent
+profile, and removes game/payment screens from navigation and the JS import graph.
+Audio calling no longer requires a premium plan. No live deployment or production
+APK publication is implied. See MESSENGER_RELEASE.md and
+IMO_CONNECTIVITY_2026-10-22.md for scope, measured evidence and outstanding phone/
+network tests. Existing Firebase, signing and background-call gates still apply.
+
+Production check on 22 October: the public WSS upgrade succeeds, but the API
+rejects the canonical client's identifier with `invalid token`. Matching backend
+activation and installed-client compatibility remain mandatory before publishing.
+See IMO_CONNECTIVITY_2026-10-22.md. No production auth/database change was made.
+
+Messenger implementation verification: Android debug native build passed in
+Actions run 39835217291 (834775f). The final Settings footer cleanup also passes
+TypeScript and production JS bundling. Source tests: 49 suites / 444 tests and
+75 calling assertions. Production API auth, phone/network tests and signed Play
+publication remain outstanding; see MESSENGER_RELEASE.md for exact build refs.

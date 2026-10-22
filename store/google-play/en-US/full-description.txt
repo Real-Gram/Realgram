@@ -1,7 +1,7 @@
-Realgram brings messaging and VPN connection tools together in one Android app.
+Realgram brings conversations, voice calls and friends together in one app.
 
-Create your profile, exchange messages and choose a VPN connection from a single interface.
+Exchange messages, start voice calls from a conversation, and call back from your recent calls. Keep your messenger profile and share an invitation code to grow your clan of invited friends.
 
-Free access may contain advertising. Features and availability depend on your app version and service settings.
+Realgram is free to use and supported by advertising. No subscription or in-app payment is required. Optional rewarded ads can provide bonus connection data.
 
-Learn more at https://realgram.no/
+Connection tools are available separately. Connection data limits apply. Internet access is required.

@@ -38,6 +38,7 @@ export type MainTabParamList = {
   Profile:  undefined;
   Game:     undefined;
   Chats:    undefined;
+  Calls:    undefined;
   Wallet:   undefined;
   Clan:     undefined;
 };

@@ -64,7 +64,16 @@ async function callPost(action: string, queryParams: Record<string, string>, bod
 
 type EventCb = (...args: any[]) => void;
 
+export interface CallHistoryEntry {
+  call_id: string; direction: 'in' | 'out'; peer_device: string; peer_user_id: string;
+  kind: 'audio' | 'video'; status: string; end_reason: string; duration_secs: number; started_at: string;
+}
 export class RealCallSignalingClient implements CallSignalingClient {
+  static async history(deviceId: string): Promise<CallHistoryEntry[]> {
+    const data = await callGet('call-history', { device_id: deviceId, limit: '50' });
+    if (!Array.isArray(data?.calls)) throw new Error('Call history unavailable');
+    return data.calls;
+  }
   private ws: WebSocket | null = null;
   private wsReady: Promise<void> | null = null;
   private reconnectAttempt = 0;

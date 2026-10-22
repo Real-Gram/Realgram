@@ -152,7 +152,7 @@ export interface PeerProfile {
 export async function getPeerProfile(peerDeviceId: string): Promise<PeerProfile | null> {
   if (!peerDeviceId) return null;
   try {
-    const data = await get('get-peer-profile', { device_id: peerDeviceId });
+    const data = await get('get-peer-profile', { device_id: peerDeviceId, messenger_only: '1' });
     return data as PeerProfile;
   } catch {
     return null;

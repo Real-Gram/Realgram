@@ -79,3 +79,18 @@ These are publication prerequisites, not a claim of Google approval.
 
 Every native dependency/executable also needs a 16 KB compatibility check.
 Increasing targetSdk alone does not establish native compatibility.
+
+## Messenger-only scope update — 22 October 2026
+
+First release now excludes Shahnameh/game access, game earning, wallet and payment
+screens. Clan is retained for invitations. New UI and release boundaries are in
+MESSENGER_RELEASE.md; the updated store drafts must be checked against the final
+signed build. Core messaging/audio calling is free and ad-funded. Do not claim
+universal no-VPN connectivity or verified background calling before field tests.
+Billing and live-TV declarations are not needed for those disabled surfaces;
+permission, data, consent and UGC checks for the actual remaining app still apply.
+
+Production check on 22 October: the public WSS upgrade succeeds, but the API
+rejects the canonical client's identifier with `invalid token`. Matching backend
+activation and installed-client compatibility remain mandatory before publishing.
+See IMO_CONNECTIVITY_2026-10-22.md. No production auth/database change was made.

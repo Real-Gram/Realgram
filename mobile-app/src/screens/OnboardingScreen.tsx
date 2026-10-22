@@ -34,14 +34,13 @@ type Step = VisionStep | PersonaStep;
 
 const VISION: VisionStep[] = [
   { kind: 'vision', icon: '🛡',  titleKey: 'ob.s1.title', subKey: 'ob.s1.sub', accent: Colors.emerald[400] },
-  { kind: 'vision', icon: '🎮',  titleKey: 'ob.s2.title', subKey: 'ob.s2.sub', accent: Colors.gold[400] },
   { kind: 'vision', icon: '🎬',  titleKey: 'ob.s3.title', subKey: 'ob.s3.sub', accent: '#3399FF' },
   { kind: 'vision', icon: '🤝',  titleKey: 'ob.s4.title', subKey: 'ob.s4.sub', accent: '#C77DFF' },
   { kind: 'vision', icon: '🪪',  titleKey: 'ob.s5.title', subKey: 'ob.s5.sub', accent: Colors.emerald[400] },
   { kind: 'vision', icon: '🌐',  titleKey: 'ob.s6.title', subKey: 'ob.s6.sub', accent: Colors.gold[400] },
 ];
 
-const STEPS: Step[] = [...VISION, { kind: 'persona' }];
+const STEPS: Step[] = VISION;
 
 export function OnboardingScreen({ onFinish }: Props) {
   const { t, isRTL } = useT();

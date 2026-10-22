@@ -1,20 +1,4 @@
-/**
- * AppNavigator — React Navigation v7
- *
- * Stack:
- *   Splash → (boot sequence) → Auth | Main
- *   Main   → BottomTabs (Home | Servers | AI | Activity | Profile | Game)
- *            Footer shows Home | Servers | AI | Game — Profile stays a tab
- *            (reachable via TopBar) but isn't in the visible footer (B-22).
- *   Settings, Diagnostics → slide_from_right stack screens
- *
- * Boot sequence:
- *   SplashAdapter runs runBootSequence(), which checks auth state and
- *   autoConnect setting, then routes accordingly.
- *
- * Adapter pattern: screens expose { onNavigate, activeTab } — adapters
- * translate React Navigation props to that interface with no screen changes.
- */
+/** Realgram messenger shell: chats, calls, connection, invitations and profile. */
 
 import React, { useEffect, useState } from 'react';
 import { AppState, View, Text, TouchableOpacity, StyleSheet, Modal, Linking, Alert, Platform, Share, InteractionManager } from 'react-native';
@@ -27,25 +11,8 @@ import { LanguageScreen }    from '../screens/LanguageScreen';
 import { OnboardingScreen }  from '../screens/OnboardingScreen';
 import { AuthScreen }        from '../screens/AuthScreen';
 import { WelcomeScreen }     from '../screens/WelcomeScreen';
-import { HomeScreen }        from '../screens/HomeScreen';
-import { ServersScreen }     from '../screens/ServersScreen';
 import { SmartAIScreen }     from '../screens/SmartAIScreen';
 import { ActivityScreen }    from '../screens/ActivityScreen';
-import { RealGramProfileScreen } from '../screens/RealGramProfileScreen';
-import { RealGramClanScreen }    from '../screens/RealGramClanScreen';
-import { RealGramMoneyDeskScreen } from '../screens/RealGramMoneyDeskScreen';
-import { RealGramChaptersScreen } from '../screens/RealGramChaptersScreen';
-import { RealGramChapterDetailScreen } from '../screens/RealGramChapterDetailScreen';
-import { RealGramHeroesScreen }  from '../screens/RealGramHeroesScreen';
-import { RealGramClanBrowseScreen } from '../screens/RealGramClanBrowseScreen';
-import { RealGramClanHomeScreen } from '../screens/RealGramClanHomeScreen';
-import { RealGramSocialScreen }  from '../screens/RealGramSocialScreen';
-import { RealGramHomeScreen }    from '../screens/RealGramHomeScreen';
-import { RealGramEarnScreen }    from '../screens/RealGramEarnScreen';
-import { DailyLuckWheelScreen }  from '../screens/DailyLuckWheelScreen';
-import { RealGramLiveTvScreen }  from '../screens/RealGramLiveTvScreen';
-import { LiveTvPlayerScreen }    from '../screens/LiveTvPlayerScreen';
-import { StarlinkScreen }        from '../screens/StarlinkScreen';
 import { TrustAiLinkScreen } from '../screens/TrustAiLinkScreen';
 import { SettingsScreen }    from '../screens/SettingsScreen';
 import { BypassAppsScreen }  from '../screens/BypassAppsScreen';
@@ -53,10 +20,7 @@ import { DiagnosticsScreen } from '../screens/DiagnosticsScreen';
 import { BottomNav, NavTab }        from '../components/BottomNav';
 import { Toast }                    from '../components/Toast';
 import { BiometricLockScreen }      from '../components/BiometricLockScreen';
-import { PremiumScreen }            from '../screens/PremiumScreen';
 import { InboxScreen }             from '../screens/InboxScreen';
-import { TransferScreen }          from '../screens/TransferScreen';
-import { WalletScreen }            from '../screens/WalletScreen';
 
 import { runBootSequence }       from '../services/bootService';
 import { claimPendingReferral }  from '../services/deepLinkService';
@@ -79,6 +43,8 @@ import { useAppBoot }            from '../hooks/useAppBoot';
 import { useDeepLinks }          from '../hooks/useDeepLinks';
 import { ensureNotificationPermission, consumeInitialRoute, parseInboxRoute } from '../services/dmNotifications';
 import { useT }                   from '../i18n';
+import { MessengerProfileScreen, InviteClanScreen, ConnectionScreen, RecentCallsScreen } from '../screens/MessengerScreens';
+import { messengerDestination } from './messengerRoutes';
 import { CALLING_ENABLED }        from '../config/featureFlags';
 
 import type { RootStackParamList, MainTabParamList } from './types';
@@ -92,10 +58,9 @@ const SCREEN_TO_TAB: Record<string, NavTab> = {
   AI:       'ai',
   Activity: 'activity',
   Profile:  'profile',
-  Game:     'game',
   Chats:    'chats',
-  Wallet:   'wallet',
   Clan:     'clan',
+  Calls:    'calls',
 };
 
 const TAB_TO_SCREEN: Record<NavTab, keyof MainTabParamList> = {
@@ -104,27 +69,20 @@ const TAB_TO_SCREEN: Record<NavTab, keyof MainTabParamList> = {
   ai:       'AI',
   activity: 'Activity',
   profile:  'Profile',
-  game:     'Game',
+  game:     'Chats',
   chats:    'Chats',
-  wallet:   'Wallet',
+  wallet:   'Chats',
   clan:     'Clan',
+  calls:    'Calls',
 };
 
 type ScreenAdapterProps = { navigation: any; route: any };
 
 function makeOnNavigate(navigation: any): (tab: NavTab) => void {
   return (tab) => {
-    if ((tab as string) === 'settings')       { navigation.navigate('Settings');       return; }
-    if ((tab as string) === 'diagnostics')    { navigation.navigate('Diagnostics');    return; }
-    if ((tab as string) === 'upgrade')        { navigation.navigate('Upgrade');        return; }
-    if ((tab as string) === 'inbox')           { navigation.navigate('Inbox');          return; }
-    if ((tab as string) === 'heroes')          { navigation.navigate('Heroes');         return; }
-    if ((tab as string) === 'livetv')          { navigation.navigate('LiveTv');         return; }
-    if ((tab as string) === 'dailyluck')       { navigation.navigate('DailyLuck');      return; }
-    if ((tab as string) === 'support')         { navigation.navigate('Inbox', { threadKey: '__support__' }); return; }
-    if ((tab as string) === 'transfer')        { navigation.navigate('Transfer');       return; }
-    if ((tab as string) === 'trustai-link')    { navigation.navigate('TrustAiLink');    return; }
-    navigation.navigate(TAB_TO_SCREEN[tab] ?? 'Home');
+    if ((tab as string) === 'support') { navigation.navigate('Inbox', { threadKey: '__support__' }); return; }
+    const target = messengerDestination(tab);
+    if (target) navigation.navigate(target);
   };
 }
 
@@ -277,18 +235,12 @@ function MainTabs() {
   return (
     <>
       <Tab.Navigator
+        initialRouteName="Chats"
         screenOptions={{ headerShown: false }}
         tabBar={(props) => {
           const routeName = props.state.routes[props.state.index].name as string;
           const activeTab = SCREEN_TO_TAB[routeName] ?? 'home';
-          // NEVER hide this — Khabat, 2026-07-22: hiding it while a season2
-          // overlay was open (previously gated on `overlayOpen`) trapped him
-          // inside Shahnameh with literally no way back to Profile/Clan/
-          // Freedom/Wallet, forcing a force-close. RealGram navigation must
-          // stay reachable at all times; season2's own bottom-nav-height CSS
-          // var (see ShahnamehEmbed.tsx) already reserves space so this bar
-          // doesn't cover the page's content, which was the original reason
-          // for hiding it.
+          // Keep the messenger footer available across tab screens.
           return (
             <BottomNav
               active={activeTab}
@@ -297,22 +249,15 @@ function MainTabs() {
           );
         }}
       >
-        <Tab.Screen name="Home"     component={HomeAdapter} />
-        <Tab.Screen name="Servers"  component={ServersAdapter} />
-        <Tab.Screen name="AI"       component={AIAdapter} />
+        <Tab.Screen name="Chats" component={ChatsAdapter} />
+        <Tab.Screen name="Calls" component={CallsAdapter} />
+        <Tab.Screen name="Servers" component={ServersAdapter} />
+        <Tab.Screen name="Clan" component={ClanAdapter} />
+        <Tab.Screen name="Profile" component={ProfileAdapter} />
+        {/* Compatibility aliases for existing safe links; no game or payment routes. */}
+        <Tab.Screen name="Home" component={ServersAdapter} />
+        <Tab.Screen name="AI" component={AIAdapter} />
         <Tab.Screen name="Activity" component={ActivityAdapter} />
-        <Tab.Screen name="Profile"  component={ProfileAdapter} />
-        {/* B-22: Game replaces Profile's slot in the visible footer (see
-            BottomNav.TAB_KEYS). Profile stays registered here so it's still
-            reachable via TopBar's profile icon, just no longer in the footer. */}
-        <Tab.Screen name="Game"     component={GameAdapter} />
-        {/* §5.10.1 — approved 2026-07-18 footer: Home · Chats · Freedom(Servers)
-            · Wallet · Clan · Profile. AI/Activity/Game stay registered (reachable
-            via TopBar/Home shortcuts) but no longer have a footer slot — see
-            BottomNav.tsx TABS. */}
-        <Tab.Screen name="Chats"    component={ChatsAdapter} />
-        <Tab.Screen name="Wallet"   component={WalletAdapter} />
-        <Tab.Screen name="Clan"     component={ClanAdapter} />
       </Tab.Navigator>
 
       {/* Optional update banner — dismissible */}
@@ -406,102 +351,22 @@ const updStyles = StyleSheet.create({
 
 // ── Tab adapters ──────────────────────────────────────────────────────────────
 
-function HomeAdapter({ navigation, route }: ScreenAdapterProps) {
-  return <HomeScreen activeTab={SCREEN_TO_TAB[route.name] ?? 'home'} onNavigate={makeOnNavigate(navigation)} />;
-}
-
-function ServersAdapter({ navigation, route }: ScreenAdapterProps) {
-  const { t } = useT();
-  return (
-    <ServersScreen
-      activeTab={SCREEN_TO_TAB[route.name] ?? 'servers'}
-      onNavigate={makeOnNavigate(navigation)}
-      onInvite={() => {
-        const code = (useAuthStore.getState().user?.referralCode || '').toUpperCase();
-        Share.share({ message: t('pr.shareMessage').replace(/\{code\}/g, code) }).catch(() => {});
-      }}
-    />
-  );
-}
-
+function ServersAdapter() { return <ConnectionScreen />; }
 function AIAdapter({ navigation, route }: ScreenAdapterProps) {
   return <SmartAIScreen activeTab={SCREEN_TO_TAB[route.name] ?? 'ai'} onNavigate={makeOnNavigate(navigation)} />;
 }
-
 function ActivityAdapter({ navigation, route }: ScreenAdapterProps) {
   return <ActivityScreen activeTab={SCREEN_TO_TAB[route.name] ?? 'activity'} onNavigate={makeOnNavigate(navigation)} />;
 }
-
-function GameAdapter({ navigation }: ScreenAdapterProps) {
-  // Khabat, 2026-07-30: "trykker på shahnameh fra footer så havner jeg
-  // tilbake til det gamle shahnameh siden" — the footer's Shahnameh tab
-  // (BottomNav's 'game' key, labelled "Shahnameh") used to render GameScreen,
-  // which is nothing but the legacy ShahnamehEmbed WebView pointed at
-  // shahnameh.setaei.com. RealGramHomeScreen (already built, reachable via
-  // the separate 'ShahnamehHome' stack route) is the real native game hub —
-  // Treasury/Continue Journey/Chronicle progress/Daily Quests/Hero Spotlight,
-  // with real Chapters/Heroes/Clan/Social/Earn/Live TV underneath. That's
-  // what tapping "Shahnameh" should land on now, not the WebView.
-  return (
-    <RealGramHomeScreen
-      onBack={() => navigation.navigate('Home')}
-      onOpenChapters={() => navigation.navigate('Chapters')}
-      onOpenHeroes={() => navigation.navigate('Heroes')}
-      onOpenLiveTv={() => navigation.navigate('LiveTv')}
-      onNavigate={makeOnNavigate(navigation) as (tab: string) => void}
-    />
-  );
-}
-
-function ChatsAdapter({ navigation }: ScreenAdapterProps) {
-  // §5.10.1: Chats is now a top-level tab (was buried in a Profile card).
-  // InboxScreen's own header always renders a back button (it doubles as a
-  // Stack-pushed screen for the support/notification deep-link cases) — as a
-  // tab there's nothing to "go back" to, so it returns to Home.
-  return <InboxScreen onBack={() => navigation.navigate('Home')} />;
-}
-
-function WalletAdapter({ navigation, route }: ScreenAdapterProps) {
-  return <WalletScreen activeTab={SCREEN_TO_TAB[route.name] ?? 'wallet'} onNavigate={makeOnNavigate(navigation)} />;
-}
-
-function ClanAdapter({ navigation }: ScreenAdapterProps) {
-  // Native RealGram Community/Clan screen (Khabat, 2026-07-22: "designed
-  // around RealGram community features — members, referrals, shared
-  // rewards, Starlink progress, data contributions, rankings — rather than
-  // a direct Shahnameh migration"). Was ShahnamehEmbed(guild.html) until
-  // v0.9.86; that swap alone was still a 1:1 guild-data reskin, so this
-  // pass reframes it around RealGram's own community mechanics (referral
-  // network, Starlink) instead, with the Shahnameh guild (if the user has
-  // one) folded in as one secondary card, not the whole screen.
-  const { t } = useT();
-  return (
-    <RealGramClanScreen
-      onOpenStarlink={() => navigation.navigate('Starlink')}
-      onInvite={() => {
-        const code = (useAuthStore.getState().user?.referralCode || '').toUpperCase();
-        Share.share({ message: t('pr.shareMessage').replace(/\{code\}/g, code) }).catch(() => {});
-      }}
-      onOpenClans={() => navigation.navigate('ClanBrowse')}
-      onOpenMoneyDesk={() => navigation.navigate('MoneyDesk')}
-    />
-  );
-}
-
+function ChatsAdapter() { return <InboxScreen embedded />; }
+function CallsAdapter() { return <RecentCallsScreen />; }
+function ClanAdapter() { return <InviteClanScreen />; }
 function ProfileAdapter({ navigation }: ScreenAdapterProps) {
-  return (
-    <RealGramProfileScreen
-      onSignOut={() => {
-        useAuthStore.getState().logout();
-        navigation.replace('Auth');
-      }}
-      onSettings={() => navigation.navigate('Settings')}
-      onOpenChapters={() => navigation.navigate('Chapters')}
-      onOpenClans={() => navigation.navigate('ClanBrowse')}
-      onOpenSocial={() => navigation.navigate('Social')}
-      onOpenEarn={() => navigation.navigate('Earn')}
-    />
-  );
+  return <MessengerProfileScreen
+    onSettings={() => navigation.navigate('Settings')}
+    onClans={() => navigation.navigate('Clan')}
+    onSignOut={() => { useAuthStore.getState().logout(); navigation.replace('Auth'); }}
+  />;
 }
 
 // ── Stack adapters ────────────────────────────────────────────────────────────
@@ -734,7 +599,7 @@ function NotificationRouteHandler() {
 // independently, so the flag here and there could silently disagree.
 function CallManager() {
   const deviceId = useAuthStore((s) => s.user?.deviceId ?? '');
-  // Free-plan users can receive calls; the backend gates who may place them.
+  // Messaging and calls are free; backend still enforces blocks and rollout controls.
   const canCall = CALLING_ENABLED;
   const activeCall   = useCallStore((s) => s.activeCall);
   const connect      = useCallStore((s) => s.connect);
@@ -836,46 +701,6 @@ export function AppNavigator() {
           )}
         </Stack.Screen>
         <Stack.Screen
-          name="Starlink"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <StarlinkScreen
-              onBack={() => navigation.goBack()}
-              onInvite={() => {
-                const code = (useAuthStore.getState().user?.referralCode || '').toUpperCase();
-                Share.share({ message: t('pr.shareMessage').replace(/\{code\}/g, code) }).catch(() => {});
-              }}
-              onConnect={() => navigation.navigate('Main', { screen: 'Servers' } as never)}
-              onUpgrade={() => navigation.navigate('Upgrade')}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="MoneyDesk"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <RealGramMoneyDeskScreen
-              onBack={() => navigation.goBack()}
-              onInvite={() => {
-                const code = (useAuthStore.getState().user?.referralCode || '').toUpperCase();
-                Share.share({ message: t('pr.shareMessage').replace(/\{code\}/g, code) }).catch(() => {});
-              }}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="Upgrade"
-          options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
-        >
-          {({ navigation }) => (
-            <PremiumScreen onBack={() => navigation.goBack()} />
-          )}
-        </Stack.Screen>
-        {/* ProfileImport route removed (build 78): config import/export disabled
-            so credentials can't be exported to other clients. */}
-        <Stack.Screen
           name="Inbox"
           options={{ animation: 'slide_from_right' }}
         >
@@ -886,128 +711,6 @@ export function AppNavigator() {
             />
           )}
         </Stack.Screen>
-        <Stack.Screen
-          name="Transfer"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <TransferScreen onBack={() => navigation.goBack()} />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="Chapters"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <RealGramChaptersScreen
-              onBack={() => navigation.goBack()}
-              onOpenChapter={(slug) => navigation.navigate('ChapterDetail', { slug })}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="ChapterDetail"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation, route }) => (
-            <RealGramChapterDetailScreen
-              slug={(route.params as { slug: string }).slug}
-              onBack={() => navigation.goBack()}
-              onOpenHeroes={(cardSlug) => navigation.navigate('Heroes', { slug: cardSlug })}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="Heroes"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation, route }) => (
-            <RealGramHeroesScreen
-              onBack={() => navigation.goBack()}
-              initialSlug={(route.params as { slug?: string } | undefined)?.slug}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="ClanBrowse"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <RealGramClanBrowseScreen
-              onBack={() => navigation.goBack()}
-              onOpenMyClan={() => navigation.navigate('ClanHome')}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="ClanHome"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <RealGramClanHomeScreen onBack={() => navigation.goBack()} />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="Social"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <RealGramSocialScreen onBack={() => navigation.goBack()} />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="Earn"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <RealGramEarnScreen
-              onBack={() => navigation.goBack()}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="DailyLuck"
-          options={{ animation: 'slide_from_right' }}
-        >
-          {({ navigation }) => (
-            <DailyLuckWheelScreen onBack={() => navigation.goBack()} />
-          )}
-        </Stack.Screen>
-        {/* react-native-video/orientation-locker/keep-awake have no Windows
-            implementation — omit the routes entirely there rather than ship
-            a Live TV screen that can't actually play anything (Windows =
-            chat-only, see featureFlags.ts's CALLING_ENABLED for the same
-            reasoning applied to calling). */}
-        {Platform.OS !== 'windows' && (
-          <Stack.Screen
-            name="LiveTv"
-            options={{ animation: 'slide_from_right' }}
-          >
-            {({ navigation }) => (
-              <RealGramLiveTvScreen
-                onBack={() => navigation.goBack()}
-                onOpenPlayer={(channelId, channelIds) => navigation.navigate('LiveTvPlayer', { channelId, channelIds })}
-              />
-            )}
-          </Stack.Screen>
-        )}
-        {Platform.OS !== 'windows' && (
-          <Stack.Screen
-            name="LiveTvPlayer"
-            options={{ animation: 'fade', orientation: 'landscape' }}
-          >
-            {({ navigation, route }) => {
-              const params = route.params as { channelId: string; channelIds: string[] };
-              return (
-                <LiveTvPlayerScreen
-                  channelId={params.channelId}
-                  channelIds={params.channelIds}
-                  onBack={() => navigation.goBack()}
-                />
-              );
-            }}
-          </Stack.Screen>
-        )}
       </Stack.Navigator>
       <Toast />
     </NavigationContainer>

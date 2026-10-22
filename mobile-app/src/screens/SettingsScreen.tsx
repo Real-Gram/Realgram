@@ -4,8 +4,7 @@ import {
 } from 'react-native';
 import { Colors, Typography, Spacing, Radius, Layout } from '../design/tokens';
 import { GlassCard } from '../components/GlassCard';
-import { EcosystemFooter } from '../components/EcosystemFooter';
-import { RealGramLinkWebView } from '../components/ShahnamehEmbed';
+import { RealGramLinkWebView } from '../components/RealgramAccountLink';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useServerStore }   from '../stores/serverStore';
 import { useAuthStore }     from '../stores/authStore';
@@ -582,7 +581,7 @@ export function SettingsScreen({ onBack, onSmartConnect, onDiagnostics, onActivi
           <Text style={styles.appName}>RealGram</Text>
           <Text style={styles.version}>v{APP_VERSION} · Build {APP_BUILD}</Text>
           <Text style={styles.legal}>© 2026 RealGram. {t('st.allRights')}</Text>
-          <EcosystemFooter />
+          <Text style={styles.legal}>{t('ms.free')}</Text>
         </View>
 
         <View style={{ height: Spacing[12] }} />
