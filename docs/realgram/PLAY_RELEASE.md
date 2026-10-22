@@ -89,3 +89,8 @@ signed build. Core messaging/audio calling is free and ad-funded. Do not claim
 universal no-VPN connectivity or verified background calling before field tests.
 Billing and live-TV declarations are not needed for those disabled surfaces;
 permission, data, consent and UGC checks for the actual remaining app still apply.
+
+Production check on 22 October: the public WSS upgrade succeeds, but the API
+rejects the canonical client's identifier with `invalid token`. Matching backend
+activation and installed-client compatibility remain mandatory before publishing.
+See IMO_CONNECTIVITY_2026-10-22.md. No production auth/database change was made.

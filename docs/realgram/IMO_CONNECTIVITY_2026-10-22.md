@@ -88,3 +88,19 @@ which proves TLS/HTTP reachability only. No API IPv6 address was returned.
 This was server-network egress, not an Iranian mobile-network or phone test.
 The WSS route is publicly reachable; authenticated room joins, real call audio,
 Firebase/background delivery and TURN/TLS configuration are still unverified.
+
+## Authenticated API compatibility blocker
+
+A subsequent read-only `call-presence-token` request using the canonical client
+identifier and an intentionally unregistered probe device returned HTTP 200 with
+`ok=false, error="invalid token"` from `api.realgram.no`. The canonical source's
+MOBILE_TOKEN matches this client, so the observed response is consistent with a
+production/backend version mismatch. A transport probe passing is insufficient.
+
+Before publishing: deploy/route the matching Realgram backend while preserving
+the existing database and message keys. The source already supports
+REALGRAM_PREVIOUS_MOBILE_TOKEN for installed-client compatibility; retain the
+previous value in server configuration, never as a retired-name literal in the
+new client. Do not create an empty replacement database or change the installation
+identity to work around this error. Production authentication was not modified by
+this investigation.

@@ -77,3 +77,8 @@ checks; do not bypass it to ship the redesign.
   device verification are tracked separately from these source checks.
 - The full Jest run reports an existing worker-shutdown/timer warning; all test
   assertions pass. Focused new messenger tests exit cleanly.
+
+Production check on 22 October: the public WSS upgrade succeeds, but the API
+rejects the canonical client's identifier with `invalid token`. Matching backend
+activation and installed-client compatibility remain mandatory before publishing.
+See IMO_CONNECTIVITY_2026-10-22.md. No production auth/database change was made.
