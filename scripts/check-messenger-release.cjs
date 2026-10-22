@@ -6,7 +6,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "../mobile-app");
 const seen = new Set();
 const forbidden =
-  /\/(?:ShahnamehEmbed|GameScreen|PremiumScreen|WalletScreen|TransferScreen|DailyLuckWheelScreen|RealGram(?:Home|Earn|MoneyDesk|Chapters|ChapterDetail|Heroes|ClanHome|ClanBrowse)Screen)\.tsx$/;
+  /\/(?:ShahnamehEmbed|EcosystemFooter|GameScreen|PremiumScreen|WalletScreen|TransferScreen|DailyLuckWheelScreen|RealGram(?:Home|Earn|MoneyDesk|Chapters|ChapterDetail|Heroes|ClanHome|ClanBrowse)Screen)\.tsx$/;
 function visit(file) {
   if (seen.has(file)) return;
   seen.add(file);

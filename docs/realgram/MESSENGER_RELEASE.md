@@ -82,3 +82,8 @@ Production check on 22 October: the public WSS upgrade succeeds, but the API
 rejects the canonical client's identifier with `invalid token`. Matching backend
 activation and installed-client compatibility remain mandatory before publishing.
 See IMO_CONNECTIVITY_2026-10-22.md. No production auth/database change was made.
+
+A local Android production JS bundle also succeeds. Bundle inspection identified
+an inherited game-wordmark footer in Settings; the messenger release now uses
+Realgram's free-messaging label there. The release boundary check also excludes
+that ecosystem/game footer. This is independent of the pending native CI build.
