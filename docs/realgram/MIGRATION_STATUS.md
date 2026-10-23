@@ -140,3 +140,13 @@ from another machine. Package com.realgram.design installs separately as
 Realgram Design and opens actual messenger screens with offline examples.
 Stable APK 0.9.149/code 189 and its hash/version metadata remain unchanged.
 See DESIGN_PREVIEW.md for source SHA, artifact checksum and validation limits.
+
+## Gold After Dark HTML review — 23 October 2026
+
+The user approved the gold/dark concept and requested a browser version before
+another APK. The HTML playground is published at https://setai.no/realgram/ as an
+explicit user-requested review-host exception. Source, approved concept image,
+design tokens and Claude handoff are under web-preview/realgram and docs/design.
+GitHub writes are currently blocked by integration permission (403), with the
+authenticated VPS devices offline. This records local/prepared source, not a push.
+See docs/design/WEB_PREVIEW_STATUS.md for verified behavior and pending checks.
