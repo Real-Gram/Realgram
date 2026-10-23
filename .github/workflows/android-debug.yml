@@ -161,10 +161,11 @@ jobs:
           p = Path('mobile-app/src/config/designPreview.ts')
           p.write_text(p.read_text().replace('IS_DESIGN_PREVIEW = false', 'IS_DESIGN_PREVIEW = true'))
           p = Path('mobile-app/android/app/build.gradle')
-          p.write_text(p.read_text().replace('versionName    "0.9.150"', 'versionName    "0.9.151-design"'))
+          p.write_text(p.read_text().replace('versionName    "0.9.150"', 'versionName    "0.9.152-gold"'))
           code = int(re.search(r'versionCode\s+(\d+)', p.read_text()).group(1))
-          Path('mobile-app/src/utils/version.ts').write_text(f"export const APP_VERSION = '0.9.151-design';\nexport const APP_BUILD = '{code}';\nexport const APP_BUILD_CODE = {code};\n")
+          Path('mobile-app/src/utils/version.ts').write_text(f"export const APP_VERSION = '0.9.152-gold';\nexport const APP_BUILD = '{code}';\nexport const APP_BUILD_CODE = {code};\n")
           PYPREVIEW
+          node mobile-app/scripts/build-gold-preview.cjs
 
       - name: Build debug APK
         working-directory: mobile-app/android
@@ -191,12 +192,13 @@ jobs:
           sdk = pathlib.Path(os.environ['ANDROID_SDK_ROOT']) / 'build-tools/35.0.0'
           badging = subprocess.check_output([str(sdk / 'aapt'), 'dump', 'badging', str(apk)], text=True)
           assert "name='com.realgram.design'" in badging, 'Incorrect preview application id'
-          assert "versionName='0.9.151-design'" in badging, 'Incorrect preview version'
+          assert "versionName='0.9.152-gold'" in badging, 'Incorrect preview version'
           assert "application-label:'Realgram Design'" in badging, 'Incorrect preview app label'
           signature = subprocess.check_output([str(sdk / 'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
+          assert '8022fb17183db497ef80581b28d45e32c1a3d421d034a50f3674ae6d6de34527' in signature, 'Design signer differs from the installed 0.9.151 preview'
           with zipfile.ZipFile(apk) as archive:
               assert archive.getinfo('assets/index.android.bundle').file_size > 100000, 'Standalone JS bundle is missing'
-          manifest = dict(source_sha=os.environ['REALGRAM_SOURCE_SHA'], application_id='com.realgram.design', version='0.9.151-design', sha256=hashlib.sha256(apk.read_bytes()).hexdigest(), signature=signature)
+          manifest = dict(source_sha=os.environ['REALGRAM_SOURCE_SHA'], application_id='com.realgram.design', version='0.9.152-gold', sha256=hashlib.sha256(apk.read_bytes()).hexdigest(), signature=signature)
           target = apk.parent / 'design-preview-manifest.json'
           target.write_text(json.dumps(manifest, indent=2) + '\n')
           print(target.read_text())

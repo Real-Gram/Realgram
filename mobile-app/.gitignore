@@ -26,3 +26,4 @@ ios/LibXray.xcframework/
 .env
 .env.*
 *.log
+src/preview/generated/

@@ -1,5 +1,5 @@
 import { IS_DESIGN_PREVIEW } from './config/designPreview';
-import { DesignPreviewApp } from './preview/DesignPreviewApp';
+import { GoldDesignPreviewApp } from './preview/GoldDesignPreviewApp';
 import React from 'react';
 import { StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -36,4 +36,4 @@ function App() {
   );
 }
 
-export default IS_DESIGN_PREVIEW ? DesignPreviewApp : App;
+export default IS_DESIGN_PREVIEW ? GoldDesignPreviewApp : App;

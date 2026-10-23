@@ -34,6 +34,8 @@ jobs:
         run: npm test
       - name: Test backend
         run: |
+          php community/test-room.php
+          python3 community/test-http.py
           mkdir -p backend/data
           php backend/scripts/test-ad-reporting.php
           php backend/scripts/test-calling.php

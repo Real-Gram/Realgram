@@ -18,7 +18,7 @@ interactive reference. Both belong in the canonical Real-Gram/Realgram repositor
 - Native starting point: the existing messenger screens and separate preview
   in `mobile-app/src/preview/DesignPreviewApp.tsx`, not a new application rewrite.
 - Continue from this feature branch, stacked on
-  `feat/realgram-design-preview-20261023`. No merge or new APK is part of this task.
+  `feat/realgram-design-preview-20261023`. A later explicit request authorizes the separate 0.9.152-gold APK and public Live Lounge. See GOLD_APK_0.9.152.md.
 
 ## Design language
 
@@ -105,8 +105,7 @@ and provides an explicit back action; wide layouts keep the master/detail shell.
 - At 800+ px: Chats has a 390 px master list and flexible conversation pane.
   Other primary screens stay within a readable 700 px column. This supports an
   unfolded device without stretching every profile action across the display.
-- The HTML is dependency-free and buildless. No cookies, analytics, localStorage,
-  contacts access or backend APIs. Changes live in page memory and reset on reload.
+- The HTML is dependency-free and buildless. No cookies, analytics, localStorage or contacts access. Private design changes reset on reload; the public Live Lounge uses the dedicated community endpoint and retains recent messages for up to seven days.
 - All dynamic user text is HTML-escaped before rendering. Keep that boundary.
 - Do not replace the screenshot with an image-map: native and web controls must
   remain real text, icons, rows, buttons and lists.

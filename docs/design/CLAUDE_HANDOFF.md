@@ -14,8 +14,7 @@ canonical https://github.com/Real-Gram/Realgram repository only.
 
 The source branch is `feat/realgram-gold-ui-20261023`, based on the previous design
 preview branch at `55964678bec0be8f0d52b3f3277cae1f00390f7a`. Keep the stacked work.
-Do not merge branches, replace the stable APK, change credentials or build/publish
-a new APK just because the HTML is ready. The next step is user review of the HTML.
+Do not merge branches, replace the stable APK or change credentials. The user subsequently authorized a new APK with this theme and a real public Live Lounge. See GOLD_APK_0.9.152.md; this overrides the earlier HTML-only/no-APK instruction for this separate design test.
 
 ## Completed scope
 

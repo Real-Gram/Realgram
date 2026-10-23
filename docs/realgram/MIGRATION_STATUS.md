@@ -150,3 +150,15 @@ design tokens and Claude handoff are under web-preview/realgram and docs/design.
 GitHub writes are currently blocked by integration permission (403), with the
 authenticated VPS devices offline. This records local/prepared source, not a push.
 See docs/design/WEB_PREVIEW_STATUS.md for verified behavior and pending checks.
+
+## Gold APK and public Live Lounge authorized — 23 October 2026
+
+The user now explicitly requests a new APK with the approved Gold After Dark theme,
+and a real shared room open without friends/invitations. The separate design app
+uses a locally bundled HTML UI in the existing WebView dependency; the private
+chats remain examples, while Live Lounge uses the dedicated public guest API.
+Community API deployed at https://realgram.no/community/room.php; scoped PHP
+routing and outside-webroot SQLite storage were provisioned. Public join and
+authenticated read pass; two-client send/ownership/rate checks pass in disposable
+loopback tests. APK build/download and GitHub publication are being completed.
+Existing stable release and private messaging/calling/VPN activation are unchanged.
