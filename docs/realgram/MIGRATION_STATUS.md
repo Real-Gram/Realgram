@@ -130,3 +130,13 @@ with live API/calling fixes deferred. A separately installed Realgram Design
 preview uses the real new UI with labeled offline example data and no account
 registration. The stable release and its signing/background-call gates remain.
 See DESIGN_PREVIEW.md for build and publication checks.
+
+### Design APK published — 23 October 2026
+
+The explicitly requested design-only APK 0.9.151-design is now live at
+https://realgram.no/download/Realgram-0.9.151-design-arm64.apk and linked from
+both homepages. Build 39882450720 passed; public download size/hash was verified
+from another machine. Package com.realgram.design installs separately as
+Realgram Design and opens actual messenger screens with offline examples.
+Stable APK 0.9.149/code 189 and its hash/version metadata remain unchanged.
+See DESIGN_PREVIEW.md for source SHA, artifact checksum and validation limits.

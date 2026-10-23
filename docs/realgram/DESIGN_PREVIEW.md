@@ -34,3 +34,19 @@ Validation: full mobile suite 51 suites / 446 assertions passes, including offli
 fixture transport and production-boundary tests. TypeScript and a production JS
 bundle with preview enabled are checked separately. Native compilation, APK
 package/version/signer and public download checks must complete before publication.
+
+Published and verified on 23 October 2026:
+- Source: ced626bf87b24d7d3a99aa3583026294e0664932, canonical PR #6.
+- Android build: https://github.com/Real-Gram/Realgram/actions/runs/39882450720
+  succeeded, including APK package, version, app label, signer and embedded bundle checks.
+- Public APK: https://realgram.no/download/Realgram-0.9.151-design-arm64.apk
+- Download size: 63,853,072 bytes. SHA-256:
+  41012324b63388ba9b323b9f8c5f70a8b3b55b13a397f266707d6d8ed312f423
+- Debug certificate SHA-256:
+  8022fb17183db497ef80581b28d45e32c1a3d421d034a50f3674ae6d6de34527
+- Downloaded again from the public URL on a separate authorized machine: HTTP 200,
+  matching size/hash. English and Persian homepages both link this APK.
+- The stable latest APK and version.json remain at 0.9.149/code 189. Stable APK
+  SHA-256 remains 2abb5698098e3e243f9ad2acd6e92fad6bd7f35ad1f3d5da0d954fec74ec0a09.
+- No physical-device install/launch claim is made. This build is ready for the
+  user's design review; live API/background-call activation remains separate.
