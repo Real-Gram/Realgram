@@ -1,3 +1,4 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
 /**
  * AdBanner — a single, fixed AdMob banner ad (B-19: Servers gets "1 AdMob
  * only", no promo rotation — unlike HomeBanner, which falls back to the
@@ -15,7 +16,7 @@
  */
 
 import React, { useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Radius, Spacing } from '../design/tokens';
 import { TrackedBannerAd, BannerSlot } from './TrackedBannerAd';
 
@@ -23,6 +24,7 @@ export function AdBanner({ show, style, slot = 'freedom_banner' }: { show: boole
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
+  if (IS_DESIGN_PREVIEW) return show ? <View style={{ minHeight: 50, backgroundColor: '#182438', borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#8A9BBF', fontSize: 12 }}>Ad position · design preview</Text></View> : null;
   if (!show || failed) return null;
 
   return (

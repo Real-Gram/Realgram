@@ -122,3 +122,11 @@ Actions run 39835217291 (834775f). The final Settings footer cleanup also passes
 TypeScript and production JS bundling. Source tests: 49 suites / 444 tests and
 75 calling assertions. Production API auth, phone/network tests and signed Play
 publication remain outstanding; see MESSENGER_RELEASE.md for exact build refs.
+
+## Design APK authorized — 23 October 2026
+
+The user now requests an immediate APK specifically to review the new design,
+with live API/calling fixes deferred. A separately installed Realgram Design
+preview uses the real new UI with labeled offline example data and no account
+registration. The stable release and its signing/background-call gates remain.
+See DESIGN_PREVIEW.md for build and publication checks.

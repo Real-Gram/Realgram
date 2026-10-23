@@ -1,3 +1,5 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
+import { previewRequest } from '../preview/previewData';
 import { Alert } from 'react-native';
 import { APP_VERSION } from '../utils/version';
 
@@ -111,6 +113,7 @@ export interface BootstrapServer {
 }
 
 async function mobilePost(action: string, body: Record<string, string | number>): Promise<unknown> {
+  if (IS_DESIGN_PREVIEW) return previewRequest(action, body);
   const form = new FormData();
   form.append('_token', TOKEN);
   for (const [k, v] of Object.entries(body)) form.append(k, String(v));
@@ -131,6 +134,7 @@ async function mobilePost(action: string, body: Record<string, string | number>)
 }
 
 async function mobileGet(action: string, params: Record<string, string> = {}): Promise<unknown> {
+  if (IS_DESIGN_PREVIEW) return previewRequest(action, params);
   const qs = new URLSearchParams({ mobile: '1', action, _token: TOKEN, ...params });
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), TIMEOUT);

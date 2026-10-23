@@ -11,6 +11,11 @@ on:
     paths:
       - 'mobile-app/**'
   workflow_dispatch:
+    inputs:
+      design_preview:
+        description: 'Build an offline design preview with example data (separate installation)'
+        type: boolean
+        default: false
 
 jobs:
   build-debug:
@@ -71,6 +76,7 @@ jobs:
           chmod +x gradlew
 
       - name: Configure incoming-call push when Firebase project is available
+        if: ${{ inputs.design_preview != true }}
         env:
           REALGRAM_GOOGLE_SERVICES_JSON: ${{ secrets.REALGRAM_GOOGLE_SERVICES_JSON }}
         run: |
@@ -146,9 +152,23 @@ jobs:
             2>/dev/null
 
       # ── Build ────────────────────────────────────────────────────────────────
+      - name: Configure optional design preview
+        if: ${{ inputs.design_preview == true }}
+        run: |
+          python3 - <<'PYPREVIEW'
+          from pathlib import Path
+          import re
+          p = Path('mobile-app/src/config/designPreview.ts')
+          p.write_text(p.read_text().replace('IS_DESIGN_PREVIEW = false', 'IS_DESIGN_PREVIEW = true'))
+          p = Path('mobile-app/android/app/build.gradle')
+          p.write_text(p.read_text().replace('versionName    "0.9.150"', 'versionName    "0.9.151-design"'))
+          code = int(re.search(r'versionCode\s+(\d+)', p.read_text()).group(1))
+          Path('mobile-app/src/utils/version.ts').write_text(f"export const APP_VERSION = '0.9.151-design';\nexport const APP_BUILD = '{code}';\nexport const APP_BUILD_CODE = {code};\n")
+          PYPREVIEW
+
       - name: Build debug APK
         working-directory: mobile-app/android
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace -PrealgramDesignPreview=${{ inputs.design_preview == true }}
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false"
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.1.10909125
@@ -160,6 +180,28 @@ jobs:
         working-directory: mobile-app/android/app/build/outputs/apk/debug
         run: ls -lh *.apk
 
+      - name: Verify design APK identity, signature and bundled screens
+        if: ${{ inputs.design_preview == true }}
+        env:
+          REALGRAM_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PYVERIFY'
+          import hashlib, json, os, pathlib, subprocess, zipfile
+          apk = pathlib.Path('mobile-app/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk')
+          sdk = pathlib.Path(os.environ['ANDROID_SDK_ROOT']) / 'build-tools/35.0.0'
+          badging = subprocess.check_output([str(sdk / 'aapt'), 'dump', 'badging', str(apk)], text=True)
+          assert "name='com.realgram.design'" in badging, 'Incorrect preview application id'
+          assert "versionName='0.9.151-design'" in badging, 'Incorrect preview version'
+          assert "application-label:'Realgram Design'" in badging, 'Incorrect preview app label'
+          signature = subprocess.check_output([str(sdk / 'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
+          with zipfile.ZipFile(apk) as archive:
+              assert archive.getinfo('assets/index.android.bundle').file_size > 100000, 'Standalone JS bundle is missing'
+          manifest = dict(source_sha=os.environ['REALGRAM_SOURCE_SHA'], application_id='com.realgram.design', version='0.9.151-design', sha256=hashlib.sha256(apk.read_bytes()).hexdigest(), signature=signature)
+          target = apk.parent / 'design-preview-manifest.json'
+          target.write_text(json.dumps(manifest, indent=2) + '\n')
+          print(target.read_text())
+          PYVERIFY
+
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
@@ -168,6 +210,7 @@ jobs:
             mobile-app/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
             mobile-app/android/app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
             mobile-app/android/app/build/outputs/apk/debug/app-universal-debug.apk
+            mobile-app/android/app/build/outputs/apk/debug/design-preview-manifest.json
           retention-days: 30
           if-no-files-found: error
 

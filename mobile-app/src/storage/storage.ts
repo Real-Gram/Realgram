@@ -1,3 +1,4 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
 import { NativeModules } from 'react-native';
 import type { StateStorage } from 'zustand/middleware';
 
@@ -10,6 +11,12 @@ let _storage: StateStorage | null = null;
 
 function resolve(): StateStorage {
   if (_storage) return _storage;
+
+  if (IS_DESIGN_PREVIEW) {
+    const map = new Map<string, string>();
+    _storage = { getItem: key => map.get(key) ?? null, setItem: (key, value) => { map.set(key, value); }, removeItem: key => { map.delete(key); } };
+    return _storage;
+  }
 
   try {
     // Dynamic require so the import doesn't throw at module parse time

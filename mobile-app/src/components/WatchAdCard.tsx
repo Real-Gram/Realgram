@@ -1,3 +1,4 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
 /**
  * WatchAdCard — "watch a rewarded ad → earn bonus data" entry point.
  *
@@ -28,7 +29,7 @@ export function WatchAdCard({ style }: { style?: object }) {
   // (devices.test_mode) is a premium account under ad-QA and must still see
   // ads here, even though real premium users are ad-free and have no use
   // for bonus data on an unlimited plan.
-  const showsAds = user?.plan === 'free' || !!user?.testMode;
+  const showsAds = !IS_DESIGN_PREVIEW && (user?.plan === 'free' || !!user?.testMode);
 
   useEffect(() => { if (showsAds) initAds(); }, [showsAds]);
 

@@ -32,8 +32,20 @@ react {
 }
 
 def realgramPlayBuild = (project.findProperty("realgramPlayBuild") ?: "false").toBoolean()
+def realgramDesignPreview = (project.findProperty("realgramDesignPreview") ?: "false").toBoolean()
+def previewJsEnabled = file("../../src/config/designPreview.ts").text.contains("IS_DESIGN_PREVIEW = true")
+if (previewJsEnabled != realgramDesignPreview) {
+    throw new GradleException("Design preview JS/native settings must match")
+}
+if (realgramDesignPreview && (realgramPlayBuild || gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") })) {
+    throw new GradleException("Design preview is only allowed in a separate debug APK")
+}
+
 
 android {
+    variantFilter { variant ->
+        if (realgramDesignPreview && variant.buildType.name != "debug") setIgnore(true)
+    }
     buildFeatures { buildConfig true }
     if (realgramPlayBuild) {
         sourceSets { release { manifest.srcFile "src/play/AndroidManifest.xml" } }
@@ -77,6 +89,10 @@ android {
 
     buildTypes {
         debug {
+            if (realgramDesignPreview) {
+                applicationIdSuffix ".design"
+                manifestPlaceholders = [appLabel: "Realgram Design"]
+            }
             signingConfig signingConfigs.debug
         }
         release {

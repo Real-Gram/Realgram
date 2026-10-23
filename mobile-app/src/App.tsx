@@ -1,3 +1,5 @@
+import { IS_DESIGN_PREVIEW } from './config/designPreview';
+import { DesignPreviewApp } from './preview/DesignPreviewApp';
 import React from 'react';
 import { StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -8,7 +10,7 @@ import { ErrorBoundary }          from './components/ErrorBoundary';
 import { Colors }                 from './design/tokens';
 import { useVpnStats }            from './hooks/useVpnStats';
 
-export default function App() {
+function App() {
   // Runs the live traffic-byte poll for the app's whole lifetime, not just
   // while HomeScreen happens to be mounted — sessionBytes (and therefore
   // Activity's Total Data / Bandwidth chart) used to freeze the moment the
@@ -33,3 +35,5 @@ export default function App() {
     </ErrorBoundary>
   );
 }
+
+export default IS_DESIGN_PREVIEW ? DesignPreviewApp : App;
