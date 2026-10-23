@@ -122,3 +122,43 @@ Actions run 39835217291 (834775f). The final Settings footer cleanup also passes
 TypeScript and production JS bundling. Source tests: 49 suites / 444 tests and
 75 calling assertions. Production API auth, phone/network tests and signed Play
 publication remain outstanding; see MESSENGER_RELEASE.md for exact build refs.
+
+## Design APK authorized — 23 October 2026
+
+The user now requests an immediate APK specifically to review the new design,
+with live API/calling fixes deferred. A separately installed Realgram Design
+preview uses the real new UI with labeled offline example data and no account
+registration. The stable release and its signing/background-call gates remain.
+See DESIGN_PREVIEW.md for build and publication checks.
+
+### Design APK published — 23 October 2026
+
+The explicitly requested design-only APK 0.9.151-design is now live at
+https://realgram.no/download/Realgram-0.9.151-design-arm64.apk and linked from
+both homepages. Build 39882450720 passed; public download size/hash was verified
+from another machine. Package com.realgram.design installs separately as
+Realgram Design and opens actual messenger screens with offline examples.
+Stable APK 0.9.149/code 189 and its hash/version metadata remain unchanged.
+See DESIGN_PREVIEW.md for source SHA, artifact checksum and validation limits.
+
+## Gold After Dark HTML review — 23 October 2026
+
+The user approved the gold/dark concept and requested a browser version before
+another APK. The HTML playground is published at https://setai.no/realgram/ as an
+explicit user-requested review-host exception. Source, approved concept image,
+design tokens and Claude handoff are under web-preview/realgram and docs/design.
+GitHub writes are currently blocked by integration permission (403), with the
+authenticated VPS devices offline. This records local/prepared source, not a push.
+See docs/design/WEB_PREVIEW_STATUS.md for verified behavior and pending checks.
+
+## Gold APK and public Live Lounge authorized — 23 October 2026
+
+The user now explicitly requests a new APK with the approved Gold After Dark theme,
+and a real shared room open without friends/invitations. The separate design app
+uses a locally bundled HTML UI in the existing WebView dependency; the private
+chats remain examples, while Live Lounge uses the dedicated public guest API.
+Community API deployed at https://realgram.no/community/room.php; scoped PHP
+routing and outside-webroot SQLite storage were provisioned. Public join and
+authenticated read pass; two-client send/ownership/rate checks pass in disposable
+loopback tests. APK build/download and GitHub publication are being completed.
+Existing stable release and private messaging/calling/VPN activation are unchanged.

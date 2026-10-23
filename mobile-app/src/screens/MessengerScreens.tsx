@@ -1,3 +1,4 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -104,6 +105,7 @@ function useInvite() {
     code,
     share: () => {
       if (!code) return;
+      if (IS_DESIGN_PREVIEW) { useToastStore.getState().show('Example invitation code — design preview only', 'info'); return; }
       Share.share({
         message: `${t("ms.inviteMessage")}\nhttps://realgram.no/?ref=${encodeURIComponent(code)}\n${code}`,
       }).catch(() =>

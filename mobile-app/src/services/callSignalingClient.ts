@@ -1,3 +1,5 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
+import { previewRequest } from '../preview/previewData';
 /**
  * callSignalingClient — the real CallSignalingClient implementation
  * (services/callService.ts's interface) against the backend agent B built
@@ -30,6 +32,7 @@ const WS_URL     = 'wss://api.realgram.no/ws/call';
 const RECONNECT_BACKOFF_MS = [1000, 2000, 5000, 10000];
 
 async function callGet(action: string, params: Record<string, string>): Promise<any> {
+  if (IS_DESIGN_PREVIEW) return previewRequest(action, params);
   const qs = new URLSearchParams({ mobile: '1', action, _token: TOKEN, ...params });
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), TIMEOUT);
@@ -44,6 +47,7 @@ async function callGet(action: string, params: Record<string, string>): Promise<
 }
 
 async function callPost(action: string, queryParams: Record<string, string>, body: Record<string, string>): Promise<any> {
+  if (IS_DESIGN_PREVIEW) return previewRequest(action, body);
   const qs = new URLSearchParams({ mobile: '1', action, ...queryParams });
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), TIMEOUT);

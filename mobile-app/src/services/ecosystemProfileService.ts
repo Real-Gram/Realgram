@@ -1,3 +1,5 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
+import { previewRequest } from '../preview/previewData';
 /**
  * Ecosystem profile service — cross-app identity layer.
  *
@@ -27,6 +29,7 @@ export interface EcosystemProfile {
 }
 
 async function post(action: string, body: Record<string, string>): Promise<unknown> {
+  if (IS_DESIGN_PREVIEW) return previewRequest(action, body);
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), TIMEOUT);
   try {
@@ -56,6 +59,7 @@ async function post(action: string, body: Record<string, string>): Promise<unkno
 // moment something did call it. Fixed at the transport level, params
 // still travel in the query string same as before.
 async function get(action: string, params: Record<string, string>): Promise<unknown> {
+  if (IS_DESIGN_PREVIEW) return previewRequest(action, params);
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), TIMEOUT);
   try {

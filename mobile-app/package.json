@@ -10,7 +10,7 @@
     "lint": "eslint . --ext .tsx,.ts",
     "type-check": "tsc --noEmit",
     "windows": "react-native run-windows",
-    "postinstall": "node scripts/patch-admob-impressions.cjs"
+    "postinstall": "node scripts/patch-admob-impressions.cjs && node scripts/build-gold-preview.cjs"
   },
   "dependencies": {
     "@react-navigation/bottom-tabs": "^6.6.1",

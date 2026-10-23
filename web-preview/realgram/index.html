@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://realgram.no/community/room.php; base-uri 'none'; form-action 'none'">
+  <meta name="theme-color" content="#090a0e">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="Try the Realgram Gold After Dark design with local example chats, calls, clan and profile.">
+  <title>Realgram · Gold After Dark</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="playground-bar"><span><span class="live-dot"></span> DESIGN PLAYGROUND <span class="bar-detail">· Local chats + public lounge</span></span><div><button id="phone-view" aria-label="Preview phone layout">Phone</button><button id="auto-view" aria-label="Use responsive layout">Auto</button><button id="concept-open">View concept</button><button id="reset">Reset</button></div></div>
+  <div class="brand-heading"><span class="wordmark"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M5 29V14A11 11 0 0 1 16 3h5a11 11 0 0 1 0 22H12l-7 7Z"/><path d="M12 11h12M12 17h8"/></svg>real<span>gram</span></span><p>GOLD AFTER DARK</p></div>
+  <main id="app" class="app" aria-label="Realgram design preview">
+    <section class="workspace"><div id="page" class="page"></div><section id="thread" class="thread" aria-label="Conversation" hidden></section></section>
+    <nav id="navigation" class="navigation" aria-label="Main navigation"></nav>
+  </main>
+  <p class="page-note">A little luxury. A lot of you. <span>Free to use · Supported by ads.</span></p>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="modal"><div id="modal-content"></div></dialog>
+  <script src="./app.js" defer></script>
+</body>
+</html>

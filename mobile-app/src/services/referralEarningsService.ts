@@ -1,3 +1,5 @@
+import { IS_DESIGN_PREVIEW } from '../config/designPreview';
+import { previewRequest } from '../preview/previewData';
 /**
  * Referral earnings (ambassador model): the user earns a fixed % of each
  * person they invited's usage, ongoing. Read-only — the panel computes it so
@@ -21,6 +23,7 @@ export interface ReferralEarnings {
 }
 
 export async function getReferralEarnings(deviceId: string): Promise<ReferralEarnings> {
+  if (IS_DESIGN_PREVIEW) return previewRequest('referral-earnings');
   const qs = new URLSearchParams({ mobile: '1', action: 'referral-earnings', _token: TOKEN, device_id: deviceId });
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), TIMEOUT);
